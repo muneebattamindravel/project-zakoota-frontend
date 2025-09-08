@@ -5,6 +5,9 @@ import type { Chunk } from '../utils/types';
 import { fmtHMS, fmtDate, fmtTime12 } from '../utils/format';
 import DeviceCombo from '../components/DeviceCombo';
 
+// ---- add a type for devices ----
+type DeviceRow = { deviceId: string; username?: string | null };
+
 function toLocalInputValue(d: Date) {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -36,28 +39,13 @@ export default function LogsExplorerPage() {
 
   const chunks: Chunk[] = q.data?.chunks ?? [];
   const meta = q.data?.meta ?? { total: 0, limit, skip };
-  const options = (devicesQ.data ?? [] as any[]).map(d => ({
+
+  // ---- annotate d to avoid implicit any ----
+  const options = ((devicesQ.data ?? []) as DeviceRow[]).map((d: DeviceRow) => ({
     value: d.deviceId,
     label: `${d.deviceId}${d.username ? ' — @' + d.username : ''}`,
-    username: d.username
+    username: d.username ?? undefined,
   }));
-
-  // // add (or reuse your own) types:
-  // type Meta = { total: number; limit: number; skip: number };
-  // type DeviceRow = { deviceId: string; username?: string | null };
-
-  // // ✅ typed fallback for chunks
-  // const chunks: Chunk[] = (q.data?.chunks ?? ([] as Chunk[]));
-
-  // // ✅ typed fallback for meta
-  // const meta: Meta = q.data?.meta ?? ({ total: 0, limit, skip } as Meta);
-
-  // // ✅ type the array and the callback param so 'd' is not implicit any
-  // const options = ((devicesQ.data ?? []) as DeviceRow[]).map((d: DeviceRow) => ({
-  //   value: d.deviceId,
-  //   label: `${d.deviceId}${d.username ? ` — @${d.username}` : ''}`,
-  //   username: d.username ?? undefined,
-  // }));
 
   return (
     <div className='space-y-4'>
@@ -120,7 +108,8 @@ export default function LogsExplorerPage() {
                               keys: c.keysPressed ?? c.logTotals?.keysPressed ?? 0
                             };
                             const top3 = [...(c.logDetails ?? [])]
-                              .map(d => ({ ...d, total: (d.activeTime || 0) + (d.idleTime || 0) }))
+                              // ---- type d to avoid implicit any ----
+                              .map((d: any) => ({ ...d, total: (d.activeTime || 0) + (d.idleTime || 0) }))
                               .sort((a, b) => b.total - a.total)
                               .slice(0, 3);
 
@@ -148,7 +137,7 @@ export default function LogsExplorerPage() {
                                   {fmtHMS(totals.idle)}
                                 </td>
 
-                                {/* Mouse: "x movements | x scrolls | x clicks" with bold clicks */}
+                                {/* Mouse */}
                                 <td className='align-top'>
                                   <span>{totals.mm} movements</span>
                                   <span className='px-1'>|</span>
@@ -157,14 +146,14 @@ export default function LogsExplorerPage() {
                                   <span><b>{totals.mc}</b> clicks</span>
                                 </td>
 
-                                {/* Keys (bold) */}
+                                {/* Keys */}
                                 <td className='align-top font-semibold'>
                                   {totals.keys}
                                 </td>
 
-                                {/* Top 3 (slightly narrower) */}
+                                {/* Top 3 */}
                                 <td className='align-top max-w-[460px]'>
-                                  {top3.map((d, j) => (
+                                  {top3.map((d: any, j: number) => (
                                     <div key={j} className='text-ellipsis overflow-hidden whitespace-nowrap'>
                                       <span className='font-semibold'>
                                         {d.appName ?? d.processName}
@@ -219,7 +208,7 @@ export default function LogsExplorerPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(show.logDetails ?? []).map((d, i) => (
+                    {(show.logDetails ?? []).map((d: any, i: number) => (
                       <tr key={i}>
                         <td>{d.appName ?? d.processName}</td>
                         <td className='max-w-[520px] whitespace-nowrap text-ellipsis overflow-hidden'>{d.title ?? ''}</td>
