@@ -1,0 +1,53 @@
+name: Deploy Zakoota Dashboard to Lightsail
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build Vite project
+      # If you rely on env vars for build (e.g., VITE_*), add them here via "env:"
+      run: npm run build
+
+    - name: Upload build to temp folder
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.LIGHTSAIL_HOST }}
+        username: ${{ secrets.LIGHTSAIL_USER }}
+        key: ${{ secrets.FRONTEND_SSH_KEY }}
+        source: "dist/**"
+        target: "/home/ubuntu/zakoota-temp"
+        strip_components: 1
+
+    - name: Replace production build on server
+      uses: appleboy/ssh-action@v0.1.10
+      with:
+        host: ${{ secrets.LIGHTSAIL_HOST }}
+        username: ${{ secrets.LIGHTSAIL_USER }}
+        key: ${{ secrets.FRONTEND_SSH_KEY }}
+        script: |
+          set -e
+          sudo mkdir -p /home/ubuntu/zakoota-frontend
+          sudo rm -rf /home/ubuntu/zakoota-frontend/*
+          sudo mv /home/ubuntu/zakoota-temp/* /home/ubuntu/zakoota-frontend/
+          sudo rm -rf /home/ubuntu/zakoota-temp
+          sudo chown -R www-data:www-data /home/ubuntu/zakoota-frontend
+          sudo chmod -R 755 /home/ubuntu/zakoota-frontend
+          # optional: reload nginx if you tweak conf
+          sudo systemctl reload nginx || sudo systemctl restart nginx
