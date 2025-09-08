@@ -79,8 +79,18 @@ export default function LogsExplorerPage() {
               : q.error ? <div className='text-red-600'>{String((q.error as any)?.message ?? q.error)}</div>
                 : (
                   <div className='space-y-2'>
-                    <div className='text-sm text-slate-600'>
-                      Total: {meta.total} • Showing {chunks.length} • skip={meta.skip}
+                    <div className='flex items-center justify-between text-sm text-slate-600'>
+                      <span>
+                        Total: {meta.total} • Showing {chunks.length} • skip={meta.skip}
+                      </span>
+                      {/* ✅ Refresh button */}
+                      <button
+                        className='btn-secondary px-3 py-1 text-sm'
+                        onClick={() => q.refetch()}
+                        disabled={q.isFetching}
+                      >
+                        {q.isFetching ? 'Refreshing...' : 'Refresh'}
+                      </button>
                     </div>
 
                     <div className='overflow-auto'>
@@ -108,36 +118,26 @@ export default function LogsExplorerPage() {
                               keys: c.keysPressed ?? c.logTotals?.keysPressed ?? 0
                             };
                             const top3 = [...(c.logDetails ?? [])]
-                              // ---- type d to avoid implicit any ----
                               .map((d: any) => ({ ...d, total: (d.activeTime || 0) + (d.idleTime || 0) }))
                               .sort((a, b) => b.total - a.total)
                               .slice(0, 3);
 
                             return (
                               <tr key={i}>
-                                {/* Start */}
                                 <td className='align-top'>
                                   <div className='font-medium'>{fmtDate(c.startAt)}</div>
                                   <div className='text-slate-500'>{fmtTime12(c.startAt)}</div>
                                 </td>
-
-                                {/* End */}
                                 <td className='align-top'>
                                   <div className='font-medium'>{fmtDate(c.endAt)}</div>
                                   <div className='text-slate-500'>{fmtTime12(c.endAt)}</div>
                                 </td>
-
-                                {/* Active (green) */}
                                 <td className='align-top text-green-600 font-semibold'>
                                   {fmtHMS(totals.active)}
                                 </td>
-
-                                {/* Idle (yellow) */}
                                 <td className='align-top text-yellow-600 font-semibold'>
                                   {fmtHMS(totals.idle)}
                                 </td>
-
-                                {/* Mouse */}
                                 <td className='align-top'>
                                   <span>{totals.mm} movements</span>
                                   <span className='px-1'>|</span>
@@ -145,13 +145,9 @@ export default function LogsExplorerPage() {
                                   <span className='px-1'>|</span>
                                   <span><b>{totals.mc}</b> clicks</span>
                                 </td>
-
-                                {/* Keys */}
                                 <td className='align-top font-semibold'>
                                   {totals.keys}
                                 </td>
-
-                                {/* Top 3 */}
                                 <td className='align-top max-w-[460px]'>
                                   {top3.map((d: any, j: number) => (
                                     <div key={j} className='text-ellipsis overflow-hidden whitespace-nowrap'>
@@ -162,7 +158,6 @@ export default function LogsExplorerPage() {
                                     </div>
                                   ))}
                                 </td>
-
                                 <td className='text-right align-top'>
                                   <button className='btn-secondary' onClick={() => setShow(c)}>View</button>
                                 </td>
@@ -182,6 +177,7 @@ export default function LogsExplorerPage() {
         </div>
       </div>
 
+      {/* modal for chunk details stays the same */}
       {show && (
         <div className='fixed inset-0 bg-black/30 grid place-items-center p-4' onClick={() => setShow(null)}>
           <div className='bg-white rounded-xl border shadow-xl max-w-3xl w-full' onClick={e => e.stopPropagation()}>
@@ -194,7 +190,6 @@ export default function LogsExplorerPage() {
                 • idle <span className='text-yellow-600 font-semibold'>{fmtHMS(show.idleTime ?? show.logTotals?.idleTime ?? 0)}</span>{' '}
                 • keys <span className='font-semibold'>{show.keysPressed ?? show.logTotals?.keysPressed ?? 0}</span>
               </div>
-
               <div className='overflow-auto max-h-[420px]'>
                 <table className='text-xs'>
                   <thead>
@@ -221,7 +216,6 @@ export default function LogsExplorerPage() {
                   </tbody>
                 </table>
               </div>
-
               <div className='text-right'>
                 <button className='btn' onClick={() => setShow(null)}>Close</button>
               </div>
