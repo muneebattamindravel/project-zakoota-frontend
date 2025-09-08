@@ -34,30 +34,30 @@ export default function LogsExplorerPage() {
     })
   });
 
-  // const chunks: Chunk[] = q.data?.chunks ?? [];
-  // const meta = q.data?.meta ?? { total: 0, limit, skip };
-  // const options = (devicesQ.data ?? [] as any[]).map(d => ({
-  //   value: d.deviceId,
-  //   label: `${d.deviceId}${d.username ? ' — @' + d.username : ''}`,
-  //   username: d.username
-  // }));
-
-  // add (or reuse your own) types:
-  type Meta = { total: number; limit: number; skip: number };
-  type DeviceRow = { deviceId: string; username?: string | null };
-
-  // ✅ typed fallback for chunks
-  const chunks: Chunk[] = (q.data?.chunks ?? ([] as Chunk[]));
-
-  // ✅ typed fallback for meta
-  const meta: Meta = q.data?.meta ?? ({ total: 0, limit, skip } as Meta);
-
-  // ✅ type the array and the callback param so 'd' is not implicit any
-  const options = ((devicesQ.data ?? []) as DeviceRow[]).map((d: DeviceRow) => ({
+  const chunks: Chunk[] = q.data?.chunks ?? [];
+  const meta = q.data?.meta ?? { total: 0, limit, skip };
+  const options = (devicesQ.data ?? [] as any[]).map(d => ({
     value: d.deviceId,
-    label: `${d.deviceId}${d.username ? ` — @${d.username}` : ''}`,
-    username: d.username ?? undefined,
+    label: `${d.deviceId}${d.username ? ' — @' + d.username : ''}`,
+    username: d.username
   }));
+
+  // // add (or reuse your own) types:
+  // type Meta = { total: number; limit: number; skip: number };
+  // type DeviceRow = { deviceId: string; username?: string | null };
+
+  // // ✅ typed fallback for chunks
+  // const chunks: Chunk[] = (q.data?.chunks ?? ([] as Chunk[]));
+
+  // // ✅ typed fallback for meta
+  // const meta: Meta = q.data?.meta ?? ({ total: 0, limit, skip } as Meta);
+
+  // // ✅ type the array and the callback param so 'd' is not implicit any
+  // const options = ((devicesQ.data ?? []) as DeviceRow[]).map((d: DeviceRow) => ({
+  //   value: d.deviceId,
+  //   label: `${d.deviceId}${d.username ? ` — @${d.username}` : ''}`,
+  //   username: d.username ?? undefined,
+  // }));
 
   return (
     <div className='space-y-4'>
