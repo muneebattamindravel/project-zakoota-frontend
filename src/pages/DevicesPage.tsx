@@ -15,7 +15,9 @@ function computeStatus(lastSeen?: string) {
 export default function DevicesPage() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['devices'], queryFn: listDevices });
-  const devices: Device[] = Array.isArray(q.data) ? q.data : (q.data?.devices ?? []);
+  const devices: Device[] = Array.isArray(q.data)
+    ? q.data
+    : q.data?.devices ?? [];
 
   const [selected, setSel] = useState<Device | null>(null);
 
@@ -27,6 +29,7 @@ export default function DevicesPage() {
   const [profileURL, setProfileURL] = useState('');
   const [checkInTime, setCheckInTime] = useState('');
 
+  // ✅ fixed mutation to handle all fields
   const assignM = useMutation({
     mutationFn: ({
       deviceId,
@@ -111,7 +114,9 @@ export default function DevicesPage() {
                           {status === 'offline' && (
                             <span className="tag tag-offline">● Offline</span>
                           )}
-                          {!['online', 'idle', 'offline'].includes(status || '') && (
+                          {!['online', 'idle', 'offline'].includes(
+                            status || ''
+                          ) && (
                             <span className="tag tag-error">
                               {status || 'unknown'}
                             </span>
