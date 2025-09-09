@@ -40,9 +40,19 @@ export async function listDevices() {
     return data?.data?.devices ?? data?.devices ?? data?.data ?? data ?? [];
 }
 
-export async function assignDevice(deviceId: string, body: { username?: string; userId?: string }) {
-    const { data } = await api.patch(`/devices/${encodeURIComponent(deviceId)}`, body);
-    return data;
+export async function assignDevice(
+  deviceId: string,
+  body: {
+    username?: string;
+    userId?: string;
+    name?: string;
+    designation?: string;
+    profileURL?: string;
+    checkInTime?: string;
+  }
+) {
+  const { data } = await api.patch(`/devices/${encodeURIComponent(deviceId)}`, body);
+  return data;
 }
 
 export async function deleteAllDevices() {
@@ -100,8 +110,8 @@ export type ConfigPayload = {
 };
 
 export async function getUserConfig(deviceId: string) {
-    const { data } = await api.post('/config/user-config', { deviceId });
-    return data?.data ?? data;
+  const { data } = await api.post('/config/user-config', { deviceId });
+  return data?.data ?? data;
 }
 
 export async function updateConfig(body: ConfigPayload) {
