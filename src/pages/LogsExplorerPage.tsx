@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { listDevices, listLogs } from '../utils/api';
 import type { Chunk } from '../utils/types';
@@ -22,6 +22,8 @@ export default function LogsExplorerPage() {
   const [skip, setSkip] = useState(0);
   const [show, setShow] = useState<null | Chunk>(null);
 
+  const queryClient = useQueryClient();
+
   const devicesQ = useQuery({ queryKey: ['devices'], queryFn: listDevices });
   useEffect(() => { setSkip(0); }, [deviceId, from, to, limit]);
 
@@ -37,7 +39,8 @@ export default function LogsExplorerPage() {
     })
   });
 
-  const chunks: Chunk[] = q.data?.chunks ?? [];
+  // ✅ clone to force re-render after refresh
+  const chunks: Chunk[] = q.data?.chunks ? [...q.data.chunks] : [];
   const meta = q.data?.meta ?? { total: 0, limit, skip };
 
   // ---- annotate d to avoid implicit any ----
@@ -86,7 +89,11 @@ export default function LogsExplorerPage() {
                       {/* ✅ Refresh button */}
                       <button
                         className='btn-secondary px-3 py-1 text-sm'
-                        onClick={() => q.refetch()}
+                        onClick={() =>
+                          queryClient.invalidateQueries({
+                            queryKey: ['logs', deviceId, from, to, limit, skip],
+                          })
+                        }
                         disabled={q.isFetching}
                       >
                         {q.isFetching ? 'Refreshing...' : 'Refresh'}
@@ -177,7 +184,6 @@ export default function LogsExplorerPage() {
         </div>
       </div>
 
-      {/* modal for chunk details stays the same */}
       {show && (
         <div className='fixed inset-0 bg-black/30 grid place-items-center p-4' onClick={() => setShow(null)}>
           <div className='bg-white rounded-xl border shadow-xl max-w-3xl w-full' onClick={e => e.stopPropagation()}>
