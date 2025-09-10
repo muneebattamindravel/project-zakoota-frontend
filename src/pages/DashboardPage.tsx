@@ -103,7 +103,7 @@ export default function DashboardPage() {
   const total = (s.activeTime ?? 0) + (s.idleTime ?? 0);
 
   const clientDelay = configQ.data?.clientHeartbeatDelay ?? 60;
-  const serviceDelay = configQ.data?.serviceHeartbeatDelay ?? 120;
+  const serviceDelay = configQ.data?.serviceHeartbeatDelay ?? 60;
 
   return (
     <div className="space-y-4">

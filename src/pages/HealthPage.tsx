@@ -17,7 +17,7 @@ export default function HealthPage() {
   const [idleThreshold, setIdleThreshold] = useState(60);
   const [isZaiminaarEnabled, setIsZaiminaarEnabled] = useState(false);
   const [clientDelay, setClientDelay] = useState(60);
-  const [serviceDelay, setServiceDelay] = useState(120);
+  const [serviceDelay, setServiceDelay] = useState(60);
 
   const [userName, setUserName] = useState('');
   const [userProfileImageURL, setUserProfileImageURL] = useState('');
@@ -28,7 +28,7 @@ export default function HealthPage() {
       setIdleThreshold(configQ.data.idleThresholdPerChunk);
       setIsZaiminaarEnabled(configQ.data.isZaiminaarEnabled);
       setClientDelay(configQ.data.clientHeartbeatDelay ?? 60);
-      setServiceDelay(configQ.data.serviceHeartbeatDelay ?? 120);
+      setServiceDelay(configQ.data.serviceHeartbeatDelay ?? 60);
       setUserName(configQ.data.name);
       setUserProfileImageURL(configQ.data.profileURL);
     }

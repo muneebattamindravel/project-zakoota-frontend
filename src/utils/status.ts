@@ -11,7 +11,7 @@ export function getDeviceStatuses(
   lastClientHeartbeat?: string,
   lastServiceHeartbeat?: string,
   clientDelaySec: number = 60,
-  serviceDelaySec: number = 120
+  serviceDelaySec: number = 60
 ): { clientStatus: 'online' | 'offline'; serviceStatus: 'online' | 'offline' } {
   const now = Date.now();
 

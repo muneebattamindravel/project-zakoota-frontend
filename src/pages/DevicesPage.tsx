@@ -63,7 +63,7 @@ export default function DevicesPage() {
   });
 
   const clientDelay = configQ.data?.clientHeartbeatDelay ?? 60;
-  const serviceDelay = configQ.data?.serviceHeartbeatDelay ?? 120;
+  const serviceDelay = configQ.data?.serviceHeartbeatDelay ?? 60;
 
   return (
     <div className="space-y-4">
