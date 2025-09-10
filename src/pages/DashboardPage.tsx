@@ -1,12 +1,24 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { listDevices, logsApps, logsSummary } from '../utils/api';
+import { listDevices, logsApps, logsSummary, getUserConfig } from '../utils/api';
 import { fmtHMS } from '../utils/format';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 
+// helper
 function toLocalInputValue(d: Date) {
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours()
+  )}:${pad(d.getMinutes())}`;
+}
+
+function computeHeartbeatStatus(
+  last?: string,
+  delaySec: number = 60
+): 'online' | 'offline' {
+  if (!last) return 'offline';
+  const diff = Date.now() - new Date(last).getTime();
+  return diff < delaySec * 2000 ? 'online' : 'offline'; // two missed beats
 }
 
 export default function DashboardPage() {
@@ -14,15 +26,25 @@ export default function DashboardPage() {
   const startOfDay = new Date(now);
   startOfDay.setHours(0, 0, 0, 0);
 
-  const [from, setFrom] = useState(toLocalInputValue(new Date(now.getTime() - 24 * 60 * 60 * 1000)));
+  const [from, setFrom] = useState(
+    toLocalInputValue(new Date(now.getTime() - 24 * 60 * 60 * 1000))
+  );
   const [to, setTo] = useState(toLocalInputValue(now));
   const [deviceIds, setDeviceIds] = useState<string[]>([]);
 
   const devicesQ = useQuery({ queryKey: ['devices'], queryFn: listDevices });
+  const configQ = useQuery({
+    queryKey: ['config'],
+    queryFn: () => getUserConfig('DASHBOARD-PLACEHOLDER'),
+  });
 
   // auto-select first device
   useEffect(() => {
-    if (!devicesQ.isLoading && (devicesQ.data ?? []).length && deviceIds.length === 0) {
+    if (
+      !devicesQ.isLoading &&
+      (devicesQ.data ?? []).length &&
+      deviceIds.length === 0
+    ) {
       setDeviceIds([(devicesQ.data as any[])[0].deviceId]);
     }
   }, [devicesQ.isLoading, devicesQ.data]);
@@ -42,7 +64,8 @@ export default function DashboardPage() {
           return {
             deviceId: d.deviceId,
             username: d.username,
-            status: d.status ?? 'offline',
+            lastClientHeartbeat: d.lastClientHeartbeat,
+            lastServiceHeartbeat: d.lastServiceHeartbeat,
             activeTime: summary?.activeTime ?? 0,
             idleTime: summary?.idleTime ?? 0,
           };
@@ -59,7 +82,9 @@ export default function DashboardPage() {
     queryFn: async () => {
       const fromISO = new Date(from).toISOString();
       const toISO = new Date(to).toISOString();
-      const results = await Promise.all(deviceIds.map(id => logsSummary(id, fromISO, toISO)));
+      const results = await Promise.all(
+        deviceIds.map((id) => logsSummary(id, fromISO, toISO))
+      );
       return results.reduce(
         (a: any, s: any) => ({
           activeTime: (a.activeTime || 0) + (s?.activeTime || 0),
@@ -82,21 +107,31 @@ export default function DashboardPage() {
     queryFn: async () => {
       const fromISO = new Date(from).toISOString();
       const toISO = new Date(to).toISOString();
-      const per = await Promise.all(deviceIds.map(id => logsApps(id, fromISO, toISO, 5)));
+      const per = await Promise.all(
+        deviceIds.map((id) => logsApps(id, fromISO, toISO, 5))
+      );
       const merged = new Map<string, number>();
-      per.flat().forEach(a => merged.set(a.appName, (merged.get(a.appName) || 0) + (a.activeTime || 0)));
-      return Array.from(merged.entries()).map(([k, v]) => ({ name: k, activeTime: v }));
+      per.flat().forEach((a) =>
+        merged.set(a.appName, (merged.get(a.appName) || 0) + (a.activeTime || 0))
+      );
+      return Array.from(merged.entries()).map(([k, v]) => ({
+        name: k,
+        activeTime: v,
+      }));
     },
   });
 
   const s = sumQ.data ?? {};
   const total = (s.activeTime ?? 0) + (s.idleTime ?? 0);
 
+  const clientDelay = configQ.data?.clientHeartbeatDelay ?? 60;
+  const serviceDelay = configQ.data?.serviceHeartbeatDelay ?? 120;
+
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">Overview</h1>
 
-      {/* 🔹 New Device Overview Card */}
+      {/* 🔹 Device Overview Card */}
       <div className="card">
         <div className="card-header">Devices Overview (Today)</div>
         <div className="card-body overflow-auto">
@@ -104,7 +139,10 @@ export default function DashboardPage() {
             'Loading devices...'
           ) : deviceSummariesQ.error ? (
             <div className="text-red-600">
-              {String((deviceSummariesQ.error as any)?.message ?? deviceSummariesQ.error)}
+              {String(
+                (deviceSummariesQ.error as any)?.message ??
+                  deviceSummariesQ.error
+              )}
             </div>
           ) : (
             <table className="text-sm w-full">
@@ -112,7 +150,8 @@ export default function DashboardPage() {
                 <tr>
                   <th className="text-left">Device ID</th>
                   <th className="text-left">User</th>
-                  <th className="text-left">Status</th>
+                  <th className="text-left">Client Status</th>
+                  <th className="text-left">Service Status</th>
                   <th className="text-left">Active Time</th>
                   <th className="text-left">Idle Time</th>
                 </tr>
@@ -122,11 +161,32 @@ export default function DashboardPage() {
                   <tr key={i} className="border-t">
                     <td>{d.deviceId}</td>
                     <td>{d.username ?? '-'}</td>
-                    <td className={d.status === 'online' ? 'text-green-600' : d.status === 'idle' ? 'text-yellow-600' : 'text-gray-500'}>
-                      {d.status}
+                    <td
+                      className={
+                        computeHeartbeatStatus(d.lastClientHeartbeat, clientDelay) ===
+                        'online'
+                          ? 'text-green-600'
+                          : 'text-gray-500'
+                      }
+                    >
+                      {computeHeartbeatStatus(d.lastClientHeartbeat, clientDelay)}
                     </td>
-                    <td className="text-green-600 font-semibold">{fmtHMS(d.activeTime)}</td>
-                    <td className="text-yellow-600 font-semibold">{fmtHMS(d.idleTime)}</td>
+                    <td
+                      className={
+                        computeHeartbeatStatus(d.lastServiceHeartbeat, serviceDelay) ===
+                        'online'
+                          ? 'text-green-600'
+                          : 'text-gray-500'
+                      }
+                    >
+                      {computeHeartbeatStatus(d.lastServiceHeartbeat, serviceDelay)}
+                    </td>
+                    <td className="text-green-600 font-semibold">
+                      {fmtHMS(d.activeTime)}
+                    </td>
+                    <td className="text-yellow-600 font-semibold">
+                      {fmtHMS(d.idleTime)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -143,7 +203,11 @@ export default function DashboardPage() {
             <select
               multiple
               value={deviceIds}
-              onChange={e => setDeviceIds(Array.from(e.target.selectedOptions).map(o => o.value))}
+              onChange={(e) =>
+                setDeviceIds(
+                  Array.from(e.target.selectedOptions).map((o) => o.value)
+                )
+              }
               className="h-28"
             >
               {((devicesQ.data ?? []) as any[]).map((d: any) => (
@@ -153,15 +217,25 @@ export default function DashboardPage() {
                 </option>
               ))}
             </select>
-            <div className="text-xs text-slate-500 mt-1">Hold Ctrl/Cmd to select multiple</div>
+            <div className="text-xs text-slate-500 mt-1">
+              Hold Ctrl/Cmd to select multiple
+            </div>
           </div>
           <div>
             <label className="block text-sm mb-1">From</label>
-            <input type="datetime-local" value={from} onChange={e => setFrom(e.target.value)} />
+            <input
+              type="datetime-local"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+            />
           </div>
           <div>
             <label className="block text-sm mb-1">To</label>
-            <input type="datetime-local" value={to} onChange={e => setTo(e.target.value)} />
+            <input
+              type="datetime-local"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+            />
           </div>
         </div>
       </div>
@@ -178,7 +252,9 @@ export default function DashboardPage() {
         </div>
         <div className="kpi">
           <div className="kpi-title">Activity Ratio</div>
-          <div className="kpi-value">{total ? ((s.activeTime ?? 0) * 100 / total).toFixed(1) : '0.0'}%</div>
+          <div className="kpi-value">
+            {total ? ((s.activeTime ?? 0) * 100 / total).toFixed(1) : '0.0'}%
+          </div>
         </div>
         <div className="kpi">
           <div className="kpi-title">Chunks</div>
@@ -206,22 +282,35 @@ export default function DashboardPage() {
       <div className="card">
         <div className="card-header">Top Apps (by Active Time)</div>
         <div className="card-body" style={{ height: 360 }}>
-          {appsQ.isLoading
-            ? 'Loading...'
-            : appsQ.error
-            ? String((appsQ.error as any)?.message ?? appsQ.error)
-            : (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={appsQ.data ?? []}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" tick={{ fontSize: 12 }} interval={0} angle={-20} textAnchor="end" height={80} />
-                  <YAxis tickFormatter={(v) => fmtHMS(Number(v))} />
-                  <Tooltip />
-                  <Legend />
-                  <Area type="monotone" dataKey="activeTime" name="Active" stroke="#3b82f6" fill="#93c5fd" />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
+          {appsQ.isLoading ? (
+            'Loading...'
+          ) : appsQ.error ? (
+            String((appsQ.error as any)?.message ?? appsQ.error)
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={appsQ.data ?? []}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="name"
+                  tick={{ fontSize: 12 }}
+                  interval={0}
+                  angle={-20}
+                  textAnchor="end"
+                  height={80}
+                />
+                <YAxis tickFormatter={(v) => fmtHMS(Number(v))} />
+                <Tooltip />
+                <Legend />
+                <Area
+                  type="monotone"
+                  dataKey="activeTime"
+                  name="Active"
+                  stroke="#3b82f6"
+                  fill="#93c5fd"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
     </div>

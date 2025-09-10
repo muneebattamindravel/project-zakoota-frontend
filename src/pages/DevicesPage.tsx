@@ -1,20 +1,26 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { assignDevice, deleteAllDevices, listDevices } from '../utils/api';
+import { assignDevice, deleteAllDevices, listDevices, getUserConfig } from '../utils/api';
 import type { Device } from '../utils/types';
 import { useState } from 'react';
 import { fmtLocal } from '../utils/format';
 
-function computeStatus(lastSeen?: string) {
-  if (!lastSeen) return 'unknown';
-  const diff = Date.now() - new Date(lastSeen).getTime();
-  if (diff < 2 * 60 * 1000) return 'online';
-  if (diff < 10 * 60 * 1000) return 'idle';
-  return 'offline';
+function computeHeartbeatStatus(
+  last?: string,
+  delaySec: number = 60
+): 'online' | 'offline' {
+  if (!last) return 'offline';
+  const diff = Date.now() - new Date(last).getTime();
+  return diff < delaySec * 2000 ? 'online' : 'offline'; // require 2 beats
 }
 
 export default function DevicesPage() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['devices'], queryFn: listDevices });
+  const configQ = useQuery({
+    queryKey: ['config'],
+    queryFn: () => getUserConfig('DEVICES-PAGE'),
+  });
+
   const devices: Device[] = Array.isArray(q.data)
     ? q.data
     : q.data?.devices ?? [];
@@ -29,7 +35,6 @@ export default function DevicesPage() {
   const [profileURL, setProfileURL] = useState('');
   const [checkInTime, setCheckInTime] = useState('');
 
-  // ✅ fixed mutation to handle all fields
   const assignM = useMutation({
     mutationFn: ({
       deviceId,
@@ -65,6 +70,9 @@ export default function DevicesPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['devices'] }),
   });
 
+  const clientDelay = configQ.data?.clientHeartbeatDelay ?? 60;
+  const serviceDelay = configQ.data?.serviceHeartbeatDelay ?? 120;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -90,81 +98,81 @@ export default function DevicesPage() {
                     <th>Device ID</th>
                     <th>Name</th>
                     <th>Type</th>
-                    <th>Status</th>
+                    <th>Client Status</th>
+                    <th>Service Status</th>
                     <th>Last Seen</th>
                     <th>Assigned User</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {devices.map((d) => {
-                    const status = d.status ?? computeStatus(d.lastSeen);
-                    return (
-                      <tr key={d.deviceId}>
-                        <td className="font-mono">{d.deviceId}</td>
-                        <td>{d.name ?? '-'}</td>
-                        <td>{d.type ?? '-'}</td>
-                        <td>
-                          {status === 'online' && (
-                            <span className="tag tag-online">● Online</span>
-                          )}
-                          {status === 'idle' && (
-                            <span className="tag tag-idle">● Idle</span>
-                          )}
-                          {status === 'offline' && (
-                            <span className="tag tag-offline">● Offline</span>
-                          )}
-                          {!['online', 'idle', 'offline'].includes(
-                            status || ''
-                          ) && (
-                            <span className="tag tag-error">
-                              {status || 'unknown'}
-                            </span>
-                          )}
-                        </td>
-                        <td>{fmtLocal(d.lastSeen)}</td>
-                        <td>
-                          {d.profileURL && (
-                            <img
-                              src={d.profileURL}
-                              alt="profile"
-                              className="w-6 h-6 inline-block rounded-full mr-2"
-                            />
-                          )}
-                          <div className="inline-block align-middle">
-                            <div className="font-medium">
-                              {d.name ?? d.username ?? '-'}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              {d.designation ?? ''}
-                            </div>
+                  {devices.map((d) => (
+                    <tr key={d.deviceId}>
+                      <td className="font-mono">{d.deviceId}</td>
+                      <td>{d.name ?? '-'}</td>
+                      <td>{d.type ?? '-'}</td>
+                      <td>
+                        {computeHeartbeatStatus(
+                          d.lastClientHeartbeat,
+                          clientDelay
+                        ) === 'online' ? (
+                          <span className="tag tag-online">● Online</span>
+                        ) : (
+                          <span className="tag tag-offline">● Offline</span>
+                        )}
+                      </td>
+                      <td>
+                        {computeHeartbeatStatus(
+                          d.lastServiceHeartbeat,
+                          serviceDelay
+                        ) === 'online' ? (
+                          <span className="tag tag-online">● Online</span>
+                        ) : (
+                          <span className="tag tag-offline">● Offline</span>
+                        )}
+                      </td>
+                      <td>{fmtLocal(d.lastSeen)}</td>
+                      <td>
+                        {d.profileURL && (
+                          <img
+                            src={d.profileURL}
+                            alt="profile"
+                            className="w-6 h-6 inline-block rounded-full mr-2"
+                          />
+                        )}
+                        <div className="inline-block align-middle">
+                          <div className="font-medium">
+                            {d.name ?? d.username ?? '-'}
                           </div>
-                        </td>
-                        <td className="text-right">
-                          <button
-                            className="btn"
-                            onClick={() => {
-                              setSel(d);
-                              setUsername(d.username ?? '');
-                              setUserId(d.userId ?? '');
-                              setName(d.name ?? '');
-                              setDesignation(d.designation ?? '');
-                              setProfileURL(d.profileURL ?? '');
-                              setCheckInTime(
-                                d.checkInTime
-                                  ? new Date(d.checkInTime)
-                                      .toISOString()
-                                      .slice(0, 16)
-                                  : ''
-                              );
-                            }}
-                          >
-                            Assign
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                          <div className="text-xs text-slate-500">
+                            {d.designation ?? ''}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="text-right">
+                        <button
+                          className="btn"
+                          onClick={() => {
+                            setSel(d);
+                            setUsername(d.username ?? '');
+                            setUserId(d.userId ?? '');
+                            setName(d.name ?? '');
+                            setDesignation(d.designation ?? '');
+                            setProfileURL(d.profileURL ?? '');
+                            setCheckInTime(
+                              d.checkInTime
+                                ? new Date(d.checkInTime)
+                                    .toISOString()
+                                    .slice(0, 16)
+                                : ''
+                            );
+                          }}
+                        >
+                          Assign
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

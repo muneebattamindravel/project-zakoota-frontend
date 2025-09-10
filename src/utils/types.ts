@@ -20,6 +20,9 @@ export type Device = {
   checkInTime?: string | null;
 
   meta?: Record<string, any>;
+
+  lastClientHeartbeat?: string;
+  lastServiceHeartbeat?: string;
 };
 
 export type ChunkDetail = {

@@ -104,9 +104,11 @@ export async function logsMissing(deviceId: string, from?: string, to?: string) 
 }
 
 export type ConfigPayload = {
-    chunkTime?: number;
-    idleThresholdPerChunk?: number;
-    isZaiminaarEnabled?: boolean;
+  chunkTime?: number;
+  idleThresholdPerChunk?: number;
+  isZaiminaarEnabled?: boolean;
+  clientHeartbeatDelay?: number;
+  serviceHeartbeatDelay?: number;
 };
 
 export async function getUserConfig(deviceId: string) {
@@ -115,6 +117,7 @@ export async function getUserConfig(deviceId: string) {
 }
 
 export async function updateConfig(body: ConfigPayload) {
-    const { data } = await api.post('/config', body);
-    return data?.data ?? data;
+  const { data } = await api.post('/config', body);
+  return data?.data ?? data;
 }
+
