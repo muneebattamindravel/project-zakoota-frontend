@@ -1,23 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { assignDevice, deleteAllDevices, listDevices } from '../utils/api';
+import { assignDevice, deleteAllDevices, listDevices, getUserConfig } from '../utils/api';
 import type { Device } from '../utils/types';
 import { useState } from 'react';
 import { fmtLocal } from '../utils/format';
-
-function computeStatus(lastSeen?: string) {
-  if (!lastSeen) return 'unknown';
-  const diff = Date.now() - new Date(lastSeen).getTime();
-  if (diff < 2 * 60 * 1000) return 'online';
-  if (diff < 10 * 60 * 1000) return 'idle';
-  return 'offline';
-}
+import { getDeviceStatuses } from '../utils/status';
 
 export default function DevicesPage() {
   const qc = useQueryClient();
+
+  // fetch devices
   const q = useQuery({ queryKey: ['devices'], queryFn: listDevices });
-  const devices: Device[] = Array.isArray(q.data)
-    ? q.data
-    : q.data?.devices ?? [];
+  const devices: Device[] = Array.isArray(q.data) ? q.data : q.data?.devices ?? [];
+
+  // fetch config (for heartbeat delays)
+  const configQ = useQuery({
+    queryKey: ['config'],
+    queryFn: () => getUserConfig('DASHBOARD-PLACEHOLDER'),
+  });
 
   const [selected, setSel] = useState<Device | null>(null);
 
@@ -29,7 +28,6 @@ export default function DevicesPage() {
   const [profileURL, setProfileURL] = useState('');
   const [checkInTime, setCheckInTime] = useState('');
 
-  // ✅ fixed mutation to handle all fields
   const assignM = useMutation({
     mutationFn: ({
       deviceId,
@@ -65,6 +63,9 @@ export default function DevicesPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['devices'] }),
   });
 
+  const clientDelay = configQ.data?.clientHeartbeatDelay ?? null;
+  const serviceDelay = configQ.data?.serviceHeartbeatDelay ?? null;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -90,7 +91,8 @@ export default function DevicesPage() {
                     <th>Device ID</th>
                     <th>Name</th>
                     <th>Type</th>
-                    <th>Status</th>
+                    <th>Client Status</th>
+                    <th>Service Status</th>
                     <th>Last Seen</th>
                     <th>Assigned User</th>
                     <th></th>
@@ -98,30 +100,44 @@ export default function DevicesPage() {
                 </thead>
                 <tbody>
                   {devices.map((d) => {
-                    const status = d.status ?? computeStatus(d.lastSeen);
+                    let clientStatus: 'online' | 'offline' = 'offline';
+                    let serviceStatus: 'online' | 'offline' = 'offline';
+
+                    if (clientDelay && serviceDelay) {
+                      const statuses = getDeviceStatuses(
+                        d.lastClientHeartbeat,
+                        d.lastServiceHeartbeat,
+                        clientDelay,
+                        serviceDelay
+                      );
+                      clientStatus = statuses.clientStatus;
+                      serviceStatus = statuses.serviceStatus;
+                    }
+
                     return (
                       <tr key={d.deviceId}>
                         <td className="font-mono">{d.deviceId}</td>
                         <td>{d.name ?? '-'}</td>
                         <td>{d.type ?? '-'}</td>
+
+                        {/* Client Status */}
                         <td>
-                          {status === 'online' && (
+                          {clientStatus === 'online' ? (
                             <span className="tag tag-online">● Online</span>
-                          )}
-                          {status === 'idle' && (
-                            <span className="tag tag-idle">● Idle</span>
-                          )}
-                          {status === 'offline' && (
+                          ) : (
                             <span className="tag tag-offline">● Offline</span>
                           )}
-                          {!['online', 'idle', 'offline'].includes(
-                            status || ''
-                          ) && (
-                            <span className="tag tag-error">
-                              {status || 'unknown'}
-                            </span>
+                        </td>
+
+                        {/* Service Status */}
+                        <td>
+                          {serviceStatus === 'online' ? (
+                            <span className="tag tag-online">● Online</span>
+                          ) : (
+                            <span className="tag tag-offline">● Offline</span>
                           )}
                         </td>
+
                         <td>{fmtLocal(d.lastSeen)}</td>
                         <td>
                           {d.profileURL && (
