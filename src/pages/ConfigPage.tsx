@@ -18,7 +18,7 @@ export default function HealthPage() {
   const [isZaiminaarEnabled, setIsZaiminaarEnabled] = useState(false);
   const [clientDelay, setClientDelay] = useState(60);
   const [serviceDelay, setServiceDelay] = useState(60);
-
+  const [version, setVersion] = useState(1);
   const [userName, setUserName] = useState('');
   const [userProfileImageURL, setUserProfileImageURL] = useState('');
 
@@ -31,6 +31,7 @@ export default function HealthPage() {
       setServiceDelay(configQ.data.serviceHeartbeatDelay ?? 60);
       setUserName(configQ.data.name);
       setUserProfileImageURL(configQ.data.profileURL);
+      setVersion(configQ.data.version);
     }
   }, [configQ.data]);
 
@@ -53,19 +54,19 @@ export default function HealthPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Health</h1>
+      <h1 className="text-xl font-semibold">Config</h1>
 
       <div className="card">
         <div className="card-body">
           {healthQ.isLoading
             ? 'Loading health...'
             : healthQ.error
-            ? String((healthQ.error as any)?.message ?? healthQ.error)
-            : (
-              <pre className="text-sm overflow-auto">
-                {JSON.stringify(healthQ.data, null, 2)}
-              </pre>
-            )}
+              ? String((healthQ.error as any)?.message ?? healthQ.error)
+              : (
+                <pre className="text-sm overflow-auto">
+                  {JSON.stringify(healthQ.data, null, 2)}
+                </pre>
+              )}
         </div>
       </div>
 
@@ -126,6 +127,10 @@ export default function HealthPage() {
                   onChange={(e) => setServiceDelay(Number(e.target.value))}
                   className="input w-full"
                 />
+              </div>
+
+              <div className="text-sm text-slate-500">
+                Current Config Version: <b>{version}</b>
               </div>
 
               <div>
