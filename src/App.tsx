@@ -2,7 +2,7 @@ import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import LoginPage from './pages/auth/LoginPage';
 import DashboardPage from './pages/DashboardPage';
-import HealthPage from './pages/HealthPage';
+import ConfigPage from './pages/ConfigPage';
 import DevicesPage from './pages/DevicesPage';
 import LogsExplorerPage from './pages/LogsExplorerPage';
 import ReportsAppsPage from './pages/reports/ReportsAppsPage';
@@ -21,7 +21,7 @@ export default function App(){
     <Route element={<Protected/>}>
       <Route element={<Layout/>}>
         <Route path='/' element={<DashboardPage/>}/>
-        <Route path='/health' element={<HealthPage/>}/>
+        <Route path='/health' element={<ConfigPage/>}/>
         <Route path='/devices' element={<DevicesPage/>}/>
         <Route path='/logs' element={<LogsExplorerPage/>}/>
         <Route path='/reports/apps' element={<ReportsAppsPage/>}/>
