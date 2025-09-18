@@ -121,3 +121,20 @@ export async function updateConfig(body: ConfigPayload) {
   return data?.data ?? data;
 }
 
+// Commands
+export async function createCommand(deviceId: string, type: string, payload: any) {
+  const { data } = await api.post(`/commands/${deviceId}`, { type, payload });
+  return data?.data ?? data;
+}
+
+export async function completeCommand(commandId: string) {
+  const { data } = await api.patch(`/commands/${commandId}/complete`);
+  return data?.data ?? data;
+}
+
+// Errors
+export async function listErrors() {
+  const { data } = await api.get('/errors');
+  return data?.data ?? data;
+}
+

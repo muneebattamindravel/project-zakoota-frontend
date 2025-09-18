@@ -7,6 +7,8 @@ import DevicesPage from './pages/DevicesPage';
 import LogsExplorerPage from './pages/LogsExplorerPage';
 import ReportsAppsPage from './pages/reports/ReportsAppsPage';
 import ReportsTitlesPage from './pages/reports/ReportsTitlesPage';
+import Commands from "./pages/CommandsPage";   // 🔹 new
+import Errors from "./pages/ErrorsPage";
 import { useAuth } from './state/auth';
 
 function Protected(){ const { bootstrapped, isAuthed } = useAuth(); const loc=useLocation();
@@ -26,6 +28,8 @@ export default function App(){
         <Route path='/logs' element={<LogsExplorerPage/>}/>
         <Route path='/reports/apps' element={<ReportsAppsPage/>}/>
         <Route path='/reports/titles' element={<ReportsTitlesPage/>}/>
+        <Route path="/commands" element={<Commands />} />
+        <Route path="/errors" element={<Errors />} /> 
       </Route>
     </Route>
   </Routes>);
