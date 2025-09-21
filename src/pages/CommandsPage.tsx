@@ -10,7 +10,7 @@ export default function CommandsPage() {
   const handleSubmit = async () => {
     try {
       const result = await createCommand(deviceId, type, JSON.parse(payload));
-      setMsg(`Command sent: ${result.commandId}`);
+      setMsg(`Command sent: ${result._id ?? result.id ?? 'OK'}`);
     } catch (err: any) {
       setMsg(`Error: ${err.message}`);
     }

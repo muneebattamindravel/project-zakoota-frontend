@@ -123,7 +123,7 @@ export async function updateConfig(body: ConfigPayload) {
 
 // Commands
 export async function createCommand(deviceId: string, type: string, payload: any) {
-  const { data } = await api.post(`/commands/${deviceId}`, { type, payload });
+  const { data } = await api.post(`/commands/create`, { deviceId, type, payload });
   return data?.data ?? data;
 }
 
@@ -133,8 +133,18 @@ export async function completeCommand(commandId: string) {
 }
 
 // Errors
-export async function listErrors() {
-  const { data } = await api.get('/errors');
+export async function listErrors(params?: { deviceId?: string; errorType?: string; page?: number; limit?: number }) {
+  const { data } = await api.get('/errors/list', { params });
   return data?.data ?? data;
 }
 
+export async function acknowledgeCommand(id: string) {
+  const { data } = await api.patch(`/commands/${id}/acknowledge`);
+  return data?.data ?? data;
+}
+
+export async function getPendingCommands(deviceId: string) {
+  const { data } = await api.get(`/commands/pending/${deviceId}`);
+  return data?.data ?? data;
+  // returns array of pending commands without side-effects
+}
