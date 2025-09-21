@@ -1,150 +1,180 @@
-import axios from 'axios';
+// src/utils/api.ts
+import axios, { AxiosInstance } from 'axios';
 
-const baseURL = import.meta.env.VITE_API_BASE || 'http://localhost:6666/zakoota-api';
-const withCreds = (import.meta.env.VITE_WITH_CREDENTIALS || 'false') === 'true';
+/**
+ * Base URL rules:
+ * - Set VITE_API_BASE env to the full API root, e.g.:
+ *   VITE_API_BASE=https://zakoota.mindravel.com/zakoota-api
+ * - Do NOT include a trailing slash.
+ */
+const BASE_URL =
+  (import.meta as any)?.env?.VITE_API_BASE ||
+  (typeof window !== 'undefined'
+    ? `${window.location.origin}/zakoota-api`
+    : 'http://localhost:6666/zakoota-api');
 
-export const api = axios.create({
-    baseURL,
-    timeout: 30000,
-    withCredentials: withCreds,
-});
+function createClient(): AxiosInstance {
+  const api = axios.create({
+    baseURL: BASE_URL,
+    withCredentials: false,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
 
+  // Attach token from localStorage if present
+  api.interceptors.request.use((config) => {
+    const token = localStorage.getItem('zakoota_token');
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+    return config;
+  });
+
+  return api;
+}
+
+export const api = createClient();
+
+/** Auth helpers */
 export function setAuthToken(token: string | null) {
-    if (token) api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    else delete api.defaults.headers.common['Authorization'];
+  if (token) localStorage.setItem('zakoota_token', token);
+  else localStorage.removeItem('zakoota_token');
 }
 
 export async function login(username: string, password: string) {
-    const { data } = await api.post('/auth/login', { username, password });
-    const user = data?.data?.user ?? data?.user ?? { username };
-    const token = data?.data?.token ?? data?.token ?? null;
-    return { ok: data?.ok ?? true, user, token, raw: data };
+  const { data } = await api.post('/auth/login', { username, password });
+  // Expecting { ok?, data: { token, user } } or { token, user }
+  const token = data?.data?.token ?? data?.token;
+  const user = data?.data?.user ?? data?.user;
+  if (token) setAuthToken(token);
+  return { token, user, raw: data };
 }
 
-export async function getMe() {
-    try {
-        const { data } = await api.get('/auth/me');
-        return data;
-    } catch {
-        return null;
-    }
-}
-
-export async function getHealth() {
-    const { data } = await api.get('/health');
-    return data;
-}
-
-export async function listDevices() {
-    const { data } = await api.get('/devices');
-    return data?.data?.devices ?? data?.devices ?? data?.data ?? data ?? [];
-}
-
-export async function assignDevice(
-  deviceId: string,
-  body: {
-    username?: string;
-    userId?: string;
-    name?: string;
-    designation?: string;
-    profileURL?: string;
-    checkInTime?: string;
-  }
-) {
-  const { data } = await api.patch(`/devices/${encodeURIComponent(deviceId)}`, body);
-  return data;
-}
-
-export async function deleteAllDevices() {
-    const { data } = await api.delete('/devices');
-    return data;
-}
-
-export type LogsQuery = { deviceId: string; from?: string; to?: string; limit?: number; skip?: number };
-
-export async function listLogs(q: LogsQuery) {
-    const { data } = await api.get('/logs', { params: q });
-    const chunks = data?.data?.chunks ?? data?.chunks ?? data?.data ?? data ?? [];
-    const meta = data?.meta ?? {
-        total: Array.isArray(chunks) ? chunks.length : 0,
-        limit: q.limit ?? 50,
-        skip: q.skip ?? 0,
-    };
-    return { chunks, meta };
-}
-
-export async function logsSummary(deviceId: string, from?: string, to?: string) {
-    const { data } = await api.get('/logs/aggregate/summary', { params: { deviceId, from, to } });
-    return data?.data?.summary ?? data?.summary ?? data?.data ?? data ?? {};
-}
-
-export async function logsApps(deviceId: string, from?: string, to?: string, top: number = 20) {
-    const { data } = await api.get('/logs/aggregate/apps', { params: { deviceId, from, to, top } });
-    const arr = data?.data?.apps ?? data?.apps ?? data?.data ?? data ?? [];
-    return arr.map((r: { appName?: string; _id?: string; activeTime?: number; idleTime?: number }) => ({
-        appName: r.appName ?? r._id ?? 'Unknown',
-        activeTime: r.activeTime ?? 0,
-        idleTime: r.idleTime ?? 0,
-    }));
-}
-
-export async function logsTitles(deviceId: string, appName: string, from?: string, to?: string, top: number = 20) {
-    const { data } = await api.get('/logs/aggregate/titles', { params: { deviceId, appName, from, to, top } });
-    const arr = data?.data?.titles ?? data?.titles ?? data?.data ?? data ?? [];
-    return arr.map((r: { title?: string; _id?: string; activeTime?: number; idleTime?: number }) => ({
-        title: r.title ?? r._id ?? 'Unknown',
-        activeTime: r.activeTime ?? 0,
-        idleTime: r.idleTime ?? 0,
-    }));
-}
-
-export async function logsMissing(deviceId: string, from?: string, to?: string) {
-    const { data } = await api.get('/logs/missing', { params: { deviceId, from, to } });
-    return data?.data?.have ?? data?.have ?? [];
-}
-
-export type ConfigPayload = {
-  chunkTime?: number;
-  idleThresholdPerChunk?: number;
-  isZaiminaarEnabled?: boolean;
-  clientHeartbeatDelay?: number;
-  serviceHeartbeatDelay?: number;
-};
-
-export async function getUserConfig(deviceId: string) {
-  const { data } = await api.post('/config/user-config', { deviceId });
+/* =========================
+   Devices & Config
+   ========================= */
+export async function listDevices(params?: Record<string, any>) {
+  const { data } = await api.get('/devices', { params });
   return data?.data ?? data;
 }
 
-export async function updateConfig(body: ConfigPayload) {
-  const { data } = await api.post('/config', body);
+export async function assignDevice(deviceId: string, payload: any) {
+  const { data } = await api.post(`/devices/${encodeURIComponent(deviceId)}/assign`, payload);
   return data?.data ?? data;
 }
 
-// Commands
-export async function createCommand(deviceId: string, type: string, payload: any) {
-  const { data } = await api.post(`/commands/create`, { deviceId, type, payload });
+export async function deviceHeartbeat(body: { deviceId: string; type: 'client' | 'service' }) {
+  const { data } = await api.post('/devices/heartbeat', body);
   return data?.data ?? data;
 }
 
-export async function completeCommand(commandId: string) {
-  const { data } = await api.patch(`/commands/${commandId}/complete`);
+export async function getUserConfig(deviceId?: string) {
+  const { data } = await api.post('/config/user', { deviceId });
   return data?.data ?? data;
 }
 
-// Errors
-export async function listErrors(params?: { deviceId?: string; errorType?: string; page?: number; limit?: number }) {
+/* =========================
+   Errors (FIXED PATH)
+   ========================= */
+export async function listErrors(params?: {
+  deviceId?: string;
+  errorType?: string;
+  page?: number;
+  limit?: number;
+}) {
   const { data } = await api.get('/errors/list', { params });
   return data?.data ?? data;
 }
 
-export async function acknowledgeCommand(id: string) {
-  const { data } = await api.patch(`/commands/${id}/acknowledge`);
+export async function logDeviceError(deviceId: string, payload: {
+  errorType: string; message: string; stack?: string; context?: any;
+}) {
+  const { data } = await api.post(`/errors/${encodeURIComponent(deviceId)}`, payload);
   return data?.data ?? data;
 }
 
-export async function getPendingCommands(deviceId: string) {
-  const { data } = await api.get(`/commands/pending/${deviceId}`);
+/* =========================
+   Commands (aligned to your backend)
+   ========================= */
+export async function createCommand(deviceId: string, type: 'restart_logger' | 'show_message' | 'restart_service', payload?: any) {
+  const { data } = await api.post('/commands/create', { deviceId, type, payload });
   return data?.data ?? data;
-  // returns array of pending commands without side-effects
+}
+
+/** Return pending commands for a device (NO ACK) — use in heartbeat flow */
+export async function getPendingCommands(deviceId: string) {
+  const { data } = await api.get(`/commands/pending/${encodeURIComponent(deviceId)}`);
+  return data?.data ?? data; // array of commands or []
+}
+
+/** Explicitly ACK a command */
+export async function acknowledgeCommand(id: string) {
+  const { data } = await api.patch(`/commands/${encodeURIComponent(id)}/acknowledge`);
+  return data?.data ?? data;
+}
+
+/** Mark command complete */
+export async function completeCommand(id: string) {
+  const { data } = await api.patch(`/commands/${encodeURIComponent(id)}/complete`);
+  return data?.data ?? data;
+}
+
+/** List commands with filters; no side-effects */
+export async function listCommands(params?: {
+  deviceId?: string;
+  status?: 'pending' | 'acknowledged' | 'completed';
+  type?: 'restart_logger' | 'show_message' | 'restart_service';
+  from?: string | number | Date;
+  to?: string | number | Date;
+  skip?: number;
+  limit?: number;
+}) {
+  const { data } = await api.get('/commands/list', { params });
+  return data?.data ?? data;
+}
+
+/** Danger: delete all commands */
+export async function deleteAllCommands() {
+  const { data } = await api.delete('/commands/deleteAll');
+  return data?.data ?? data;
+}
+
+/* =========================
+   Logs
+   ========================= */
+export async function listLogs(params: {
+  deviceId: string;
+  from?: string | number | Date;
+  to?: string | number | Date;
+  limit?: number;
+  skip?: number;
+}) {
+  const { data } = await api.get('/logs', { params });
+  return data?.data ?? data;
+}
+
+export async function logsSummary(params: { deviceId: string; from?: string | number | Date; to?: string | number | Date; }) {
+  const { data } = await api.get('/logs/aggregate/summary', { params });
+  return data?.data ?? data;
+}
+
+export async function logsApps(params: { deviceId: string; from?: string | number | Date; to?: string | number | Date; top?: number; }) {
+  const { data } = await api.get('/logs/aggregate/apps', { params });
+  return data?.data ?? data;
+}
+
+export async function logsTitles(params: { deviceId: string; appName: string; from?: string | number | Date; to?: string | number | Date; top?: number; }) {
+  const { data } = await api.get('/logs/aggregate/titles', { params });
+  return data?.data ?? data;
+}
+
+export async function logsMissing(params: { deviceId: string; from?: string | number | Date; to?: string | number | Date; }) {
+  const { data } = await api.get('/logs/missing', { params });
+  return data?.data ?? data;
+}
+
+/* =========================
+   Utilities
+   ========================= */
+export function getApiBase(): string {
+  return BASE_URL;
 }
