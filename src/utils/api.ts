@@ -155,3 +155,23 @@ export async function listErrors(params?: {
   return { items: Array.isArray(items) ? items : [], meta };
 }
 
+// List commands with filters; no side-effects
+export async function listCommands(params?: {
+  deviceId?: string;
+  status?: 'pending' | 'acknowledged' | 'completed';
+  type?: 'restart_logger' | 'show_message' | 'restart_service';
+  from?: string | number | Date;
+  to?: string | number | Date;
+  skip?: number;
+  limit?: number;
+}) {
+  const { data } = await api.get('/commands/list', { params });
+  // Backend responds with { ok, data: [], meta } 
+  const items = data?.data ?? [];
+  const meta = data?.meta ?? {
+    total: Array.isArray(items) ? items.length : 0,
+    skip: Number(params?.skip ?? 0),
+    limit: Number(params?.limit ?? 50),
+  };
+  return { items: Array.isArray(items) ? items : [], meta };
+}
