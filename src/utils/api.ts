@@ -143,8 +143,15 @@ export async function getPendingCommands(deviceId: string) {
   return data?.data ?? data;
 }
 
-// Errors
-export async function listErrors(params?: { deviceId?: string; errorType?: string; page?: number; limit?: number }) {
+export async function listErrors(params?: {
+  deviceId?: string;
+  errorType?: string;
+  page?: number;
+  limit?: number;
+}) {
   const { data } = await api.get('/errors/list', { params });
-  return data?.data ?? data;
+  const items = data?.data ?? data?.items ?? [];
+  const meta = data?.meta ?? { page: 1, total: Array.isArray(items) ? items.length : 0 };
+  return { items: Array.isArray(items) ? items : [], meta };
 }
+
