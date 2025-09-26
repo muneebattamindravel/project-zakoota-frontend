@@ -1,24 +1,87 @@
-@tailwind base; @tailwind components; @tailwind utilities;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Root / page */
 html, body, #root { height: 100%; }
-.container { @apply max-w-7xl mx-auto px-4; }
-.card { @apply bg-white border rounded-2xl shadow-sm; }
+body { @apply bg-slate-50 text-slate-900; }
+
+/* Layout helpers */
+.container { @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8; }
+.main-wrap { @apply w-full min-w-0; } /* prevent fit-content shrink */
+
+/* Cards */
+.card { @apply bg-white border border-slate-200 rounded-2xl shadow-sm; }
 .card-header { @apply px-4 py-3 border-b font-semibold; }
 .card-body { @apply p-4; }
-.kpi { @apply rounded-xl bg-white border p-4; }
+
+/* KPI blocks */
+.kpi { @apply rounded-xl bg-white border border-slate-200 p-4; }
 .kpi-title { @apply text-xs uppercase tracking-wide text-slate-500; }
 .kpi-value { @apply text-2xl font-semibold; }
-.btn { @apply inline-flex items-center justify-center rounded-md px-3 py-2 border bg-slate-900 text-white hover:bg-black transition; }
-.btn-secondary { @apply inline-flex items-center justify-center rounded-md px-3 py-2 border bg-white text-slate-900 hover:bg-slate-100 transition; }
-input, select { @apply border rounded-md px-3 py-2 w-full outline-none focus:ring-2 ring-slate-300; }
-table { @apply w-full text-sm; } th, td { @apply px-3 py-2 border-b; } th { @apply text-left; }
+
+/* Buttons (consistent variants; never full-width unless you choose to) */
+.btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg
+         px-3 py-2 text-sm font-medium transition select-none
+         focus:outline-none focus:ring-2 focus:ring-offset-0;
+  width: auto;
+}
+.btn:disabled { @apply opacity-70 cursor-not-allowed; }
+
+.btn-primary   { @apply bg-slate-900 text-white hover:bg-black border border-slate-900 focus:ring-slate-300; }
+.btn-secondary { @apply bg-white text-slate-900 hover:bg-slate-100 border border-slate-300 focus:ring-slate-200; }
+.btn-outline   { @apply bg-white text-slate-800 hover:bg-slate-50 border border-slate-300 focus:ring-slate-200; }
+.btn-danger    { @apply bg-rose-600 text-white hover:bg-rose-700 border border-rose-600 focus:ring-rose-200; }
+.btn-success   { @apply bg-emerald-600 text-white hover:bg-emerald-700 border border-emerald-600 focus:ring-emerald-200; }
+.btn-warning   { @apply bg-amber-600 text-white hover:bg-amber-700 border border-amber-600 focus:ring-amber-200; }
+.btn-sm { @apply px-2.5 py-1.5 text-xs rounded-md; }
+.btn-xs { @apply px-2 py-1 text-xs rounded-md; }
+
+/* Inputs */
+input, select, textarea {
+  @apply border border-slate-300 rounded-md px-3 py-2 w-full text-sm
+         outline-none focus:ring-2 focus:ring-indigo-200;
+}
+textarea { @apply resize-y; }
+
+/* Tables */
+.table { @apply w-full text-sm table-auto; }
+table   { @apply w-full text-sm; }
+th, td  { @apply px-3 py-2 border-b border-slate-200; }
+th      { @apply text-left bg-slate-50 text-slate-700; }
+.table-wrap { @apply overflow-x-auto rounded-lg border border-slate-200; }
+
+/* Combobox (kept) */
 .combo { @apply relative; }
 .combo-list { @apply absolute z-20 mt-1 max-h-72 overflow-auto w-full bg-white border rounded-md shadow-lg; }
 .combo-item { @apply px-3 py-2 hover:bg-slate-100 cursor-pointer; }
 .combo-empty { @apply px-3 py-2 text-slate-500; }
 
-/* tags */
+/* Tags / badges */
 .tag { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border; }
-.tag-online { @apply bg-green-50 text-green-700 border-green-200; }
-.tag-idle { @apply bg-yellow-50 text-yellow-700 border-yellow-200; }
-.tag-offline { @apply bg-slate-50 text-slate-600 border-slate-200; }
-.tag-error { @apply bg-red-50 text-red-700 border-red-200; }
+.tag-online  { @apply bg-green-50  text-green-700  border-green-200; }
+.tag-idle    { @apply bg-yellow-50 text-yellow-700 border-yellow-200; }
+.tag-offline { @apply bg-slate-50  text-slate-600  border-slate-200; }
+.tag-error   { @apply bg-red-50    text-red-700    border-red-200; }
+
+/* Code / Pre blocks (for JSON payloads) */
+pre  { @apply bg-slate-50 border border-slate-200 rounded-lg p-3 overflow-auto; }
+code { @apply font-mono text-xs; }
+.truncate-mono { @apply font-mono text-xs truncate break-words; }
+
+/* ---- Devices page layouts ---- */
+
+/* Grid that fills the row and collapses empty tracks (fixes “squeezed” single-card) */
+.cards-grid {
+  @apply grid gap-6 w-full;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+}
+@screen 2xl {
+  .cards-grid {
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  }
+}
+
+/* Optional: cap a single very-wide card on huge screens */
+.device-card { max-width: 1100px; }

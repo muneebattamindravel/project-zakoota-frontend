@@ -4,45 +4,71 @@ import {
   listDevices,
   assignDevice,
   deleteAllDevices,
-  listCommands,
-  createCommand,
-  acknowledgeCommand,
-  completeCommand,
   getUserConfig,
+  // commands (ack-only flow)
+  getPendingCommands,
+  acknowledgeCommand,
 } from '../utils/api';
 import type { Device } from '../utils/types';
-import { fmtLocal } from '../utils/format';
-import { getDeviceStatuses } from '../utils/status';
+import {
+  Badge,
+  Modal,
+  SectionCard,
+  Spinner,
+  Toasts,
+  useToasts,
+} from '../components/ui';
+import LoadingButton from '../components/ui/LoadingButton';
 
-type CommandItem = {
-  _id: string;
+type PendingCommand = {
+  _id?: string;          // backend sometimes returns _id, sometimes id
+  id?: string;
   deviceId: string;
-  type: 'show_message' | 'restart_logger' | 'restart_service' | string;
-  status: 'pending' | 'acknowledged' | 'completed' | string;
-  createdAt: string;
-  acknowledgedAt?: string;
-  completedAt?: string;
+  type: string;
+  status?: string;       // may not exist; we’ll show “pending”
+  createdAt?: string;
   payload?: any;
 };
+
+function cmdId(c: PendingCommand) {
+  return c._id ?? c.id ?? '';
+}
+
+function fmt(dt?: string | number | Date) {
+  if (!dt) return '—';
+  try { return new Date(dt).toLocaleString(); } catch { return String(dt); }
+}
+
+function LabeledInput({
+  label, value, onChange, placeholder,
+}: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; }) {
+  return (
+    <div>
+      <label className="block text-sm text-slate-700 mb-1">{label}</label>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+      />
+    </div>
+  );
+}
 
 function DeviceCard({
   device,
   clientDelay,
   serviceDelay,
+  onToast,
 }: {
   device: Device;
   clientDelay: number | null;
   serviceDelay: number | null;
+  onToast: ReturnType<typeof useToasts>['push'];
 }) {
   const qc = useQueryClient();
 
-  // Command modal state
-  const [openModal, setOpenModal] = useState(false);
-  const [cmdType, setCmdType] = useState<'show_message' | 'restart_logger' | 'restart_service'>('show_message');
-  const [cmdPayload, setCmdPayload] = useState('{"message":"Hello from dashboard"}');
-  const [submitMsg, setSubmitMsg] = useState('');
-
-  // Assignment modal state
+  // Assign modal
   const [openAssign, setOpenAssign] = useState(false);
   const [username, setUsername] = useState(device.username ?? '');
   const [userId, setUserId] = useState(device.userId ?? '');
@@ -53,400 +79,302 @@ function DeviceCard({
     device.checkInTime ? new Date(device.checkInTime).toISOString().slice(0, 16) : ''
   );
 
-  // Fetch latest N commands for this device
-  const commandsQ = useQuery({
-    queryKey: ['commands', device.deviceId],
-    queryFn: async () => {
-      const res = await listCommands({ deviceId: device.deviceId, limit: 8 });
-      return res.items as CommandItem[];
-    },
+  // Per-row loaders
+  const [ackingId, setAckingId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Fetch pending commands only (no side-effects)
+  const pendingQ = useQuery({
+    queryKey: ['pending-commands', device.deviceId],
+    queryFn: () => getPendingCommands(device.deviceId) as Promise<PendingCommand[]>,
   });
 
-  const commands = commandsQ.data ?? [];
-  const pending = useMemo(() => commands.find((c) => c.status === 'pending'), [commands]);
-  const last = useMemo(() => (commands.length > 0 ? commands[0] : null), [commands]);
-  const lastCompleted = useMemo(
-    () => commands.find((c) => c.status === 'completed'),
-    [commands]
-  );
+  const refetchPending = async () => {
+    try { setRefreshing(true); await qc.invalidateQueries({ queryKey: ['pending-commands', device.deviceId] }); }
+    finally { setRefreshing(false); }
+  };
 
-  // Assignment mutation
+  const pendingList: PendingCommand[] = Array.isArray(pendingQ.data) ? pendingQ.data : [];
+  const firstPending = useMemo(() => pendingList[0] ?? null, [pendingList]);
+
+  // Assign mutation
   const assignM = useMutation({
-    mutationFn: () =>
-      assignDevice(device.deviceId, {
-        username: username || undefined,
-        userId: userId || undefined,
-        name: name || undefined,
-        designation: designation || undefined,
-        profileURL: profileURL || undefined,
-        checkInTime: checkInTime || undefined,
-      }),
+    mutationFn: () => assignDevice(device.deviceId, {
+      username: username || undefined,
+      userId: userId || undefined,
+      name: name || undefined,
+      designation: designation || undefined,
+      profileURL: profileURL || undefined,
+      checkInTime: checkInTime || undefined,
+    }),
     onSuccess: () => {
+      onToast({ tone: 'success', title: 'Device updated' });
       setOpenAssign(false);
       qc.invalidateQueries({ queryKey: ['devices'] });
     },
+    onError: (e: any) => onToast({ tone: 'error', title: 'Update failed', desc: e?.message || 'Try again' }),
   });
 
-  // Send command mutation
-  const sendCommandM = useMutation({
-    mutationFn: async () => {
-      let payload: any = {};
-      try {
-        payload = cmdPayload ? JSON.parse(cmdPayload) : {};
-      } catch (e: any) {
-        throw new Error(`Invalid JSON payload: ${e?.message || e}`);
-      }
-      return createCommand(device.deviceId, cmdType, payload);
-    },
-    onSuccess: (cmd: any) => {
-      setSubmitMsg(`Command sent: ${cmd?._id ?? cmd?.id ?? 'OK'}`);
-      qc.invalidateQueries({ queryKey: ['commands', device.deviceId] });
-      setTimeout(() => setSubmitMsg(''), 2500);
-    },
-    onError: (err: any) => {
-      setSubmitMsg(`Error: ${err?.message || 'Failed to send'}`);
-    },
-  });
-
-  // Ack/Complete handlers
-  const onAcknowledge = async (id: string) => {
-    await acknowledgeCommand(id);
-    qc.invalidateQueries({ queryKey: ['commands', device.deviceId] });
-  };
-  const onComplete = async (id: string) => {
-    await completeCommand(id);
-    qc.invalidateQueries({ queryKey: ['commands', device.deviceId] });
+  const onAck = async (id: string) => {
+    if (!id) return;
+    try {
+      setAckingId(id);
+      await acknowledgeCommand(id);
+      onToast({ tone: 'success', title: 'Acknowledged' });
+      refetchPending();
+    } catch (e: any) {
+      onToast({ tone: 'error', title: 'Acknowledge failed', desc: e?.message || '' });
+    } finally {
+      setAckingId(null);
+    }
   };
 
-  // Status bubbles
-  let clientStatus: 'online' | 'offline' = 'offline';
-  let serviceStatus: 'online' | 'offline' = 'offline';
-  if (clientDelay && serviceDelay) {
-    const st = getDeviceStatuses(device.lastClientHeartbeat, device.lastServiceHeartbeat, clientDelay, serviceDelay);
-    clientStatus = st.clientStatus;
-    serviceStatus = st.serviceStatus;
+  // Status (delay-aware)
+  const now = Date.now();
+  let clientTone: 'green' | 'amber' | 'red' | 'gray' = 'gray';
+  let serviceTone: 'green' | 'amber' | 'red' | 'gray' = 'gray';
+  if (clientDelay) {
+    const diff = device.lastClientHeartbeat ? now - new Date(device.lastClientHeartbeat).getTime() : Infinity;
+    clientTone = diff < clientDelay * 1.2 ? 'green' : diff < clientDelay * 4 ? 'amber' : 'red';
+  }
+  if (serviceDelay) {
+    const diff = device.lastServiceHeartbeat ? now - new Date(device.lastServiceHeartbeat).getTime() : Infinity;
+    serviceTone = diff < serviceDelay * 1.2 ? 'green' : diff < serviceDelay * 4 ? 'amber' : 'red';
   }
 
   return (
-    <div className="card shadow-sm border rounded-2xl overflow-hidden">
-      <div className="card-body p-5">
-        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-          {/* Left: identity */}
-          <div className="flex items-start gap-4">
-            {device.profileURL ? (
-              <img src={device.profileURL} alt="profile" className="w-12 h-12 rounded-full object-cover" />
-            ) : (
-              <div className="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center text-slate-500">
-                {((device.name ?? device.username ?? 'U') as string).slice(0, 1).toUpperCase()}
-              </div>
-            )}
-            <div>
-              <div className="text-lg font-semibold">{device.name ?? device.username ?? 'Unassigned'}</div>
-              <div className="text-xs text-slate-500">{device.designation ?? '-'}</div>
-              <div className="text-xs text-slate-500 font-mono mt-1">{device.deviceId}</div>
-            </div>
-          </div>
-
-          {/* Right: quick actions */}
-          <div className="flex items-center gap-2">
-            <button className="btn btn-sm" onClick={() => setOpenAssign(true)}>Assign</button>
-            <button className="btn btn-sm" onClick={() => setOpenModal(true)}>Send Command</button>
-            <button className="btn btn-sm btn-outline" onClick={() => qc.invalidateQueries({ queryKey: ['commands', device.deviceId] })}>
-              Refresh Commands
-            </button>
-          </div>
-        </div>
-
-        {/* Status row */}
-        <div className="grid md:grid-cols-4 gap-3 mt-4">
-          <InfoItem label="Client Status">
-            {clientStatus === 'online' ? <span className="tag tag-online">● Online</span> : <span className="tag tag-offline">● Offline</span>}
-          </InfoItem>
-          <InfoItem label="Service Status">
-            {serviceStatus === 'online' ? <span className="tag tag-online">● Online</span> : <span className="tag tag-offline">● Offline</span>}
-          </InfoItem>
-          <InfoItem label="Last Seen">{fmtLocal(device.lastSeen) || '-'}</InfoItem>
-          <InfoItem label="Type">{device.type ?? '-'}</InfoItem>
-        </div>
-
-        {/* Command Summary */}
-        <div className="mt-5 grid lg:grid-cols-3 gap-4">
-          <SummaryCard
-            title="Pending Command"
-            emptyText="No pending command"
-            content={
-              pending ? (
-                <div>
-                  <div className="font-medium">{pending.type}</div>
-                  <div className="text-xs text-slate-500">{fmtLocal(pending.createdAt)}</div>
-                  {pending.payload && (
-                    <pre className="text-xs bg-slate-50 border rounded p-2 mt-2 overflow-auto max-h-40">
-                      {JSON.stringify(pending.payload, null, 2)}
-                    </pre>
-                  )}
-                  <div className="flex gap-2 mt-2">
-                    <button className="btn btn-xs" onClick={() => onAcknowledge(pending._id)}>Acknowledge</button>
-                    <button className="btn btn-xs btn-outline" onClick={() => onComplete(pending._id)}>Complete</button>
-                  </div>
-                </div>
-              ) : null
-            }
-          />
-          <SummaryCard
-            title="Last Command"
-            emptyText="—"
-            content={
-              last ? (
-                <div>
-                  <div className="font-medium">{last.type} <span className="text-xs text-slate-500">({last.status})</span></div>
-                  <div className="text-xs text-slate-500">{fmtLocal(last.createdAt)}</div>
-                </div>
-              ) : null
-            }
-          />
-          <SummaryCard
-            title="Last Completed"
-            emptyText="—"
-            content={
-              lastCompleted ? (
-                <div>
-                  <div className="font-medium">{lastCompleted.type}</div>
-                  <div className="text-xs text-slate-500">{fmtLocal(lastCompleted.completedAt || lastCompleted.createdAt)}</div>
-                </div>
-              ) : null
-            }
-          />
-        </div>
-
-        {/* History table */}
-        <div className="mt-5">
-          <div className="flex items-center justify-between mb-2">
-            <div className="font-semibold">Recent Commands</div>
-            <button
-              className="btn btn-xs btn-outline"
-              onClick={() => qc.invalidateQueries({ queryKey: ['commands', device.deviceId] })}
-            >
-              Refresh
-            </button>
-          </div>
-          {commandsQ.isLoading ? (
-            <div className="text-sm text-slate-500">Loading commands…</div>
-          ) : commands.length === 0 ? (
-            <div className="text-sm text-slate-500">No command history</div>
+    <div className="device-card w-full min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow transition-shadow">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 p-5 border-b">
+        <div className="flex items-start gap-4 min-w-0">
+          {device.profileURL ? (
+            <img className="h-12 w-12 rounded-full object-cover" src={device.profileURL} alt="" />
           ) : (
-            <div className="overflow-auto border rounded">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="text-left px-2 py-2">Type</th>
-                    <th className="text-left px-2 py-2">Status</th>
-                    <th className="text-left px-2 py-2">Created</th>
-                    <th className="text-left px-2 py-2">Ack</th>
-                    <th className="text-left px-2 py-2">Completed</th>
-                    <th className="text-right px-2 py-2">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {commands.map((c) => (
-                    <tr key={c._id} className="border-t">
-                      <td className="px-2 py-2">{c.type}</td>
-                      <td className="px-2 py-2">
-                        <span className="px-2 py-0.5 rounded text-xs border">
-                          {c.status}
-                        </span>
-                      </td>
-                      <td className="px-2 py-2">{fmtLocal(c.createdAt) || '-'}</td>
-                      <td className="px-2 py-2">{c.acknowledgedAt ? fmtLocal(c.acknowledgedAt) : '—'}</td>
-                      <td className="px-2 py-2">{c.completedAt ? fmtLocal(c.completedAt) : '—'}</td>
-                      <td className="px-2 py-2 text-right">
-                        {c.status === 'pending' && (
-                          <button className="btn btn-xs mr-2" onClick={() => onAcknowledge(c._id)}>
-                            Ack
-                          </button>
-                        )}
-                        {['pending', 'acknowledged'].includes(c.status) && (
-                          <button className="btn btn-xs btn-outline" onClick={() => onComplete(c._id)}>
-                            Complete
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="h-12 w-12 rounded-full bg-gradient-to-br from-indigo-200 to-indigo-400 text-white flex items-center justify-center">
+              {(device.name ?? device.username ?? 'U').slice(0, 1).toUpperCase()}
             </div>
           )}
+          <div className="min-w-0">
+            <div className="text-lg font-semibold text-slate-900 truncate">
+              {device.name ?? device.username ?? 'Unassigned'}
+            </div>
+            <div className="text-slate-500 text-sm truncate">{device.designation ?? '-'}</div>
+            <div className="text-xs text-slate-500 font-mono truncate break-words">{device.deviceId}</div>
+          </div>
         </div>
 
-        {/* Send Command Modal */}
-        {openModal && (
-          <div className="fixed inset-0 bg-black/30 z-40 flex items-center justify-center">
-            <div className="bg-white rounded-2xl shadow-xl w-[520px] max-w-[95vw] p-6 space-y-3">
-              <div className="text-lg font-semibold">Send Command</div>
-              <div className="grid grid-cols-1 gap-3">
-                <label className="text-sm">Command Type</label>
-                <select
-                  className="border rounded p-2"
-                  value={cmdType}
-                  onChange={(e) => setCmdType(e.target.value as any)}
-                >
-                  <option value="show_message">Show Message</option>
-                  <option value="restart_logger">Restart Logger</option>
-                  <option value="restart_service">Restart Service</option>
-                </select>
-
-                <label className="text-sm mt-2">Payload (JSON)</label>
-                <textarea
-                  className="border rounded p-2 h-28 font-mono text-xs"
-                  value={cmdPayload}
-                  onChange={(e) => setCmdPayload(e.target.value)}
-                  placeholder='{"message":"Hello"}'
-                />
-
-                <div className="flex items-center justify-end gap-2 mt-2">
-                  <button className="btn" onClick={() => sendCommandM.mutate()} disabled={sendCommandM.isPending}>
-                    {sendCommandM.isPending ? 'Sending…' : 'Send'}
-                  </button>
-                  <button className="btn btn-outline" onClick={() => setOpenModal(false)}>
-                    Cancel
-                  </button>
-                </div>
-
-                {submitMsg && <div className="text-xs text-slate-600">{submitMsg}</div>}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Assign Modal */}
-        {openAssign && (
-          <div className="fixed inset-0 bg-black/30 z-40 flex items-center justify-center">
-            <div className="bg-white rounded-2xl shadow-xl w-[650px] max-w-[95vw] p-6">
-              <div className="text-lg font-semibold mb-3">Assign Device</div>
-              <div className="grid md:grid-cols-2 gap-3">
-                <LabeledInput label="Username" value={username} onChange={setUsername} placeholder="username" />
-                <LabeledInput label="User ID" value={userId} onChange={setUserId} placeholder="optional" />
-                <LabeledInput label="Full Name" value={name} onChange={setName} placeholder="John Doe" />
-                <LabeledInput label="Designation" value={designation} onChange={setDesignation} placeholder="Developer" />
-                <LabeledInput label="Profile Image URL" value={profileURL} onChange={setProfileURL} placeholder="https://..." />
-                <div>
-                  <label className="block text-sm mb-1">Check-in Time</label>
-                  <input type="datetime-local" value={checkInTime} onChange={(e) => setCheckInTime(e.target.value)} />
-                </div>
-              </div>
-              <div className="flex items-center justify-end gap-2 mt-4">
-                <button className="btn" onClick={() => assignM.mutate()} disabled={assignM.isPending}>
-                  {assignM.isPending ? 'Saving…' : 'Save'}
-                </button>
-                <button className="btn btn-outline" onClick={() => setOpenAssign(false)}>
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 md:shrink-0">
+          <LoadingButton className="bg-slate-100 hover:bg-slate-200 text-slate-800" onClick={() => setOpenAssign(true)}>
+            Assign
+          </LoadingButton>
+          {/* Send Command disabled since API not implemented */}
+          <LoadingButton className="bg-indigo-600 text-white opacity-50 cursor-not-allowed" disabled>
+            Send Command
+          </LoadingButton>
+          <LoadingButton
+            className="bg-white border text-slate-700 hover:bg-slate-50"
+            pending={refreshing}
+            pendingText="Refreshing…"
+            onClick={refetchPending}
+          >
+            Refresh
+          </LoadingButton>
+        </div>
       </div>
+
+      {/* Body */}
+      <div className="p-5 grid gap-6 lg:grid-cols-3">
+        {/* Left column */}
+        <div className="space-y-4 lg:col-span-1">
+          <SectionCard title="Status">
+            <div className="flex flex-wrap gap-2">
+              <Badge tone={clientTone}>Client {clientTone === 'green' ? 'Online' : clientTone === 'amber' ? 'Idle' : 'Offline'}</Badge>
+              <Badge tone={serviceTone}>Service {serviceTone === 'green' ? 'Online' : serviceTone === 'amber' ? 'Idle' : 'Offline'}</Badge>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-700">
+              <div><div className="text-xs text-slate-500">Last Seen</div><div className="truncate">{fmt(device.lastSeen)}</div></div>
+              <div><div className="text-xs text-slate-500">Type</div><div className="truncate">{device.type ?? '—'}</div></div>
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Command Summary (Ack-only)">
+            <div className="space-y-2 text-sm text-slate-700">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-slate-500">Pending</div>
+                <div className="truncate">
+                  {firstPending ? `${firstPending.type} • ${fmt(firstPending.createdAt)}` : '—'}
+                </div>
+              </div>
+            </div>
+            {firstPending && (
+              <div className="mt-3">
+                <LoadingButton
+                  className="bg-amber-600 hover:bg-amber-700 text-white"
+                  pending={ackingId === cmdId(firstPending)}
+                  pendingText="Ack…"
+                  onClick={() => onAck(cmdId(firstPending))}
+                >
+                  Acknowledge
+                </LoadingButton>
+              </div>
+            )}
+          </SectionCard>
+        </div>
+
+        {/* Right: Pending commands list (read-only, ack-able) */}
+        <div className="lg:col-span-2">
+          <SectionCard title="Pending Commands">
+            {pendingQ.isLoading ? (
+              <div className="flex items-center gap-2 text-slate-600"><Spinner /> Loading…</div>
+            ) : pendingList.length === 0 ? (
+              <div className="text-slate-500">No pending commands.</div>
+            ) : (
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Type</th>
+                      <th>Created</th>
+                      <th className="text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingList.map((c) => {
+                      const id = cmdId(c);
+                      return (
+                        <tr key={id || `${c.type}-${c.createdAt || Math.random()}`}>
+                          <td>{c.type}</td>
+                          <td>{fmt(c.createdAt)}</td>
+                          <td className="text-right">
+                            <LoadingButton
+                              className="border bg-white hover:bg-slate-50 text-slate-800"
+                              pending={ackingId === id}
+                              pendingText="Ack…"
+                              onClick={() => onAck(id)}
+                            >
+                              Acknowledge
+                            </LoadingButton>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </SectionCard>
+        </div>
+      </div>
+
+      {/* Assign Modal */}
+      <Modal open={openAssign} onClose={() => setOpenAssign(false)} title="Assign Device" widthClass="w-[700px]">
+        <div className="grid md:grid-cols-2 gap-4">
+          <LabeledInput label="Username" value={username} onChange={setUsername} placeholder="username" />
+          <LabeledInput label="User ID" value={userId} onChange={setUserId} placeholder="optional" />
+          <LabeledInput label="Full Name" value={name} onChange={setName} placeholder="John Doe" />
+          <LabeledInput label="Designation" value={designation} onChange={setDesignation} placeholder="Developer" />
+          <LabeledInput label="Profile Image URL" value={profileURL} onChange={setProfileURL} placeholder="https://..." />
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Check-in Time</label>
+            <input
+              type="datetime-local"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              value={checkInTime}
+              onChange={(e) => setCheckInTime(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 mt-5">
+          <LoadingButton className="bg-white border text-slate-700 hover:bg-slate-50" onClick={() => setOpenAssign(false)}>
+            Cancel
+          </LoadingButton>
+          <LoadingButton
+            className="bg-indigo-600 hover:bg-indigo-700 text-white"
+            pending={assignM.isPending}
+            pendingText="Saving…"
+            onClick={() => assignM.mutate()}
+          >
+            Save
+          </LoadingButton>
+        </div>
+      </Modal>
     </div>
   );
 }
 
-function InfoItem({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="p-3 rounded-xl border bg-white">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="mt-1">{children}</div>
-    </div>
-  );
-}
-
-function SummaryCard({
-  title,
-  emptyText,
-  content,
-}: {
-  title: string;
-  emptyText: string;
-  content: React.ReactNode | null;
-}) {
-  return (
-    <div className="p-4 rounded-xl border bg-white">
-      <div className="text-sm font-semibold mb-2">{title}</div>
-      {content ? <div>{content}</div> : <div className="text-sm text-slate-500">{emptyText}</div>}
-    </div>
-  );
-}
-
-function LabeledInput({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-}) {
-  return (
-    <div>
-      <label className="block text-sm mb-1">{label}</label>
-      <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
+    <div className="flex items-center justify-between gap-3">
+      <div className="text-slate-500">{label}</div>
+      <div className="truncate">{value}</div>
     </div>
   );
 }
 
 export default function DevicesPage() {
   const qc = useQueryClient();
+  const { toasts, push, remove } = useToasts();
 
-  // Fetch devices
   const devicesQ = useQuery({ queryKey: ['devices'], queryFn: listDevices });
-
-  // Fetch config (for heartbeat thresholds)
-  const configQ = useQuery({
-    queryKey: ['config'],
-    queryFn: () => getUserConfig('DASHBOARD-PLACEHOLDER'),
-  });
+  const configQ = useQuery({ queryKey: ['config'], queryFn: () => getUserConfig('DASHBOARD-PLACEHOLDER') });
 
   const delAll = useMutation({
     mutationFn: deleteAllDevices,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['devices'] }),
+    onSuccess: () => { push({ tone: 'success', title: 'All devices deleted' }); qc.invalidateQueries({ queryKey: ['devices'] }); },
+    onError: (e: any) => push({ tone: 'error', title: 'Delete failed', desc: e?.message || '' }),
   });
 
-  const devices: Device[] = Array.isArray(devicesQ.data)
-    ? devicesQ.data
-    : devicesQ.data?.devices ?? [];
-
+  const devices: Device[] = Array.isArray(devicesQ.data) ? devicesQ.data : devicesQ.data?.devices ?? [];
   const clientDelay = configQ.data?.clientHeartbeatDelay ?? null;
   const serviceDelay = configQ.data?.serviceHeartbeatDelay ?? null;
 
   return (
-    <div className="space-y-6">
+    <div className="container main-wrap space-y-6">
+      <Toasts items={toasts} onClose={remove} />
+
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Device Control Center</h1>
+        <h1 className="text-2xl font-semibold text-slate-900">Device Control Center</h1>
         <div className="flex items-center gap-2">
-          <button className="btn btn-outline" onClick={() => qc.invalidateQueries({ queryKey: ['devices'] })}>
+          <LoadingButton
+            className="bg-white border text-slate-700 hover:bg-slate-50"
+            pending={devicesQ.isFetching}
+            pendingText="Refreshing…"
+            onClick={() => qc.invalidateQueries({ queryKey: ['devices'] })}
+          >
             Refresh Devices
-          </button>
-          <button className="btn-secondary" onClick={() => delAll.mutate()}>
-            Delete All Devices
-          </button>
+          </LoadingButton>
+          <LoadingButton
+            className="bg-rose-600 hover:bg-rose-700 text-white"
+            pending={delAll.isPending}
+            pendingText="Deleting…"
+            onClick={() => delAll.mutate()}
+          >
+            Delete All
+          </LoadingButton>
         </div>
       </div>
 
       {devicesQ.isLoading ? (
-        <div>Loading devices…</div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-8 flex items-center gap-3 text-slate-600">
+          <Spinner /> Loading devices…
+        </div>
       ) : devicesQ.error ? (
-        <div className="text-red-600">{String((devicesQ.error as any)?.message ?? devicesQ.error)}</div>
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">
+          {(devicesQ.error as any)?.message ?? 'Failed to load devices'}
+        </div>
       ) : devices.length === 0 ? (
-        <div className="text-slate-500">No devices yet.</div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-8 text-slate-600">
+          No devices yet.
+        </div>
       ) : (
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <div className="cards-grid">
           {devices.map((d) => (
             <DeviceCard
               key={d.deviceId}
               device={d}
               clientDelay={clientDelay}
               serviceDelay={serviceDelay}
+              onToast={push}
             />
           ))}
         </div>
