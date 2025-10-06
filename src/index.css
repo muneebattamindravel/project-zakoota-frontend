@@ -72,16 +72,25 @@ code { @apply font-mono text-xs; }
 
 /* ---- Devices page layouts ---- */
 
-/* Grid that fills the row and collapses empty tracks (fixes “squeezed” single-card) */
+/* Grid that fills the row and collapses empty tracks */
 .cards-grid {
   @apply grid gap-6 w-full;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-}
-@screen 2xl {
-  .cards-grid {
-    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-  }
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
 }
 
-/* Optional: cap a single very-wide card on huge screens */
-.device-card { max-width: 1100px; }
+/* Make columns comfortably wider as the viewport grows */
+@screen md {
+  .cards-grid { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+}
+@screen xl {
+  .cards-grid { grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
+}
+
+/* Only cap the width when there is exactly ONE card */
+.cards-grid > .device-card:only-child {
+  max-width: 1100px; /* tweak to taste */
+  justify-self: center; /* center the single card */
+}
+
+/* Remove any global cap that was applied to every card */
+.device-card { max-width: none; }

@@ -122,9 +122,23 @@ export async function updateConfig(body: ConfigPayload) {
   return data?.data ?? data;
 }
 
-// Commands
-export async function createCommand(deviceId: string, type: string, payload: any) {
-  const { data } = await api.post(`/commands/create`, { deviceId, type, payload });
+export async function createCommand(body: {
+  deviceId: string;
+  target: 'client' | 'service';
+  type: string;
+  payload?: any;
+}) {
+  const { data } = await api.post('/commands/create', body);
+  return data?.data ?? data;
+}
+
+// broadcast to all devices
+export async function broadcastCommand(body: {
+  target: 'client' | 'service';
+  type: string;
+  payload?: any;
+}) {
+  const { data } = await api.post('/commands/broadcast', body);
   return data?.data ?? data;
 }
 
@@ -133,8 +147,8 @@ export async function completeCommand(commandId: string) {
   return data?.data ?? data;
 }
 
-export async function acknowledgeCommand(id: string) {
-  const { data } = await api.patch(`/commands/${id}/acknowledge`);
+export async function acknowledgeCommand(commandId: string) {
+  const { data } = await api.patch('/commands/acknowledge', { commandId });
   return data?.data ?? data;
 }
 

@@ -5,9 +5,11 @@ import {
   assignDevice,
   deleteAllDevices,
   getUserConfig,
-  // commands (ack-only flow)
+  // commands
   getPendingCommands,
   acknowledgeCommand,
+  createCommand,          // <-- add in api.ts
+  broadcastCommand,       // <-- add in api.ts
 } from '../utils/api';
 import type { Device } from '../utils/types';
 import {
@@ -21,14 +23,27 @@ import {
 import LoadingButton from '../components/ui/LoadingButton';
 
 type PendingCommand = {
-  _id?: string;          // backend sometimes returns _id, sometimes id
+  _id?: string;
   id?: string;
   deviceId: string;
   type: string;
-  status?: string;       // may not exist; we’ll show “pending”
+  status?: string;
   createdAt?: string;
   payload?: any;
+  target?: 'client' | 'service';
 };
+
+const CLIENT_TYPES = [
+  'show-popup',
+  'focus-hours-start',
+  'focus-hours-end',
+  'hide',
+  'refresh',
+  'lock',
+  'requires-update',
+] as const;
+
+const SERVICE_TYPES = ['restart-service', 'restart-client'] as const;
 
 function cmdId(c: PendingCommand) {
   return c._id ?? c.id ?? '';
@@ -40,12 +55,13 @@ function fmt(dt?: string | number | Date) {
 }
 
 function LabeledInput({
-  label, value, onChange, placeholder,
-}: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; }) {
+  label, value, onChange, placeholder, type = 'text',
+}: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string; }) {
   return (
     <div>
       <label className="block text-sm text-slate-700 mb-1">{label}</label>
       <input
+        type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -79,14 +95,23 @@ function DeviceCard({
     device.checkInTime ? new Date(device.checkInTime).toISOString().slice(0, 16) : ''
   );
 
+  // Send command modal (per-device)
+  const [openCmd, setOpenCmd] = useState(false);
+  const [target, setTarget] = useState<'client' | 'service'>('client');
+  const [cmdType, setCmdType] = useState<string>('hide');
+  const [cmdPayload, setCmdPayload] = useState('{"message":"Hello from server 🎯"}');
+
   // Per-row loaders
   const [ackingId, setAckingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Fetch pending commands only (no side-effects)
+  // Pending commands (no side-effects)
   const pendingQ = useQuery({
     queryKey: ['pending-commands', device.deviceId],
     queryFn: () => getPendingCommands(device.deviceId) as Promise<PendingCommand[]>,
+    // refresh pending list periodically too
+    refetchInterval: 10000,
+    refetchOnWindowFocus: 'always',
   });
 
   const refetchPending = async () => {
@@ -113,6 +138,22 @@ function DeviceCard({
       qc.invalidateQueries({ queryKey: ['devices'] });
     },
     onError: (e: any) => onToast({ tone: 'error', title: 'Update failed', desc: e?.message || 'Try again' }),
+  });
+
+  // Send command (single device)
+  const sendM = useMutation({
+    mutationFn: async () => {
+      let payload: any = {};
+      try { payload = cmdPayload ? JSON.parse(cmdPayload) : {}; }
+      catch (e: any) { throw new Error(`Invalid JSON: ${e?.message || e}`); }
+      return createCommand({ deviceId: device.deviceId, target, type: cmdType, payload });
+    },
+    onSuccess: () => {
+      onToast({ tone: 'success', title: 'Command queued' });
+      setOpenCmd(false);
+      refetchPending();
+    },
+    onError: (e: any) => onToast({ tone: 'error', title: 'Send failed', desc: e?.message || 'Check payload' }),
   });
 
   const onAck = async (id: string) => {
@@ -142,6 +183,9 @@ function DeviceCard({
     serviceTone = diff < serviceDelay * 1.2 ? 'green' : diff < serviceDelay * 4 ? 'amber' : 'red';
   }
 
+  // Type list by target
+  const TYPES = target === 'client' ? CLIENT_TYPES : SERVICE_TYPES;
+
   return (
     <div className="device-card w-full min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow transition-shadow">
       {/* Header */}
@@ -167,8 +211,10 @@ function DeviceCard({
           <LoadingButton className="bg-slate-100 hover:bg-slate-200 text-slate-800" onClick={() => setOpenAssign(true)}>
             Assign
           </LoadingButton>
-          {/* Send Command disabled since API not implemented */}
-          <LoadingButton className="bg-indigo-600 text-white opacity-50 cursor-not-allowed" disabled>
+          <LoadingButton
+            className="bg-indigo-600 hover:bg-indigo-700 text-white"
+            onClick={() => setOpenCmd(true)}
+          >
             Send Command
           </LoadingButton>
           <LoadingButton
@@ -197,7 +243,7 @@ function DeviceCard({
             </div>
           </SectionCard>
 
-          <SectionCard title="Command Summary (Ack-only)">
+          <SectionCard title="Command Summary">
             <div className="space-y-2 text-sm text-slate-700">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-slate-500">Pending</div>
@@ -221,7 +267,7 @@ function DeviceCard({
           </SectionCard>
         </div>
 
-        {/* Right: Pending commands list (read-only, ack-able) */}
+        {/* Right: Pending commands list */}
         <div className="lg:col-span-2">
           <SectionCard title="Pending Commands">
             {pendingQ.isLoading ? (
@@ -233,6 +279,7 @@ function DeviceCard({
                 <table className="table">
                   <thead>
                     <tr>
+                      <th>Target</th>
                       <th>Type</th>
                       <th>Created</th>
                       <th className="text-right">Action</th>
@@ -243,6 +290,7 @@ function DeviceCard({
                       const id = cmdId(c);
                       return (
                         <tr key={id || `${c.type}-${c.createdAt || Math.random()}`}>
+                          <td>{c.target ?? 'client'}</td>
                           <td>{c.type}</td>
                           <td>{fmt(c.createdAt)}</td>
                           <td className="text-right">
@@ -298,15 +346,63 @@ function DeviceCard({
           </LoadingButton>
         </div>
       </Modal>
-    </div>
-  );
-}
 
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="text-slate-500">{label}</div>
-      <div className="truncate">{value}</div>
+      {/* Send Command (single) */}
+      <Modal open={openCmd} onClose={() => setOpenCmd(false)} title={`Send Command to ${device.deviceId}`} widthClass="w-[660px]">
+        <div className="grid md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Target</label>
+            <select
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              value={target}
+              onChange={(e) => {
+                const t = e.target.value as 'client' | 'service';
+                setTarget(t);
+                // set default type for that target
+                setCmdType(t === 'client' ? 'hide' : 'restart-service');
+              }}
+            >
+              <option value="client">client</option>
+              <option value="service">service</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Type</label>
+            <select
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              value={cmdType}
+              onChange={(e) => setCmdType(e.target.value)}
+            >
+              {(TYPES as readonly string[]).map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-sm text-slate-700 mb-1">Payload (JSON)</label>
+            <textarea
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono h-36 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              value={cmdPayload}
+              onChange={(e) => setCmdPayload(e.target.value)}
+              placeholder='{"message":"Hello from server 🎯"}'
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 mt-5">
+          <LoadingButton className="bg-white border text-slate-700 hover:bg-slate-50" onClick={() => setOpenCmd(false)}>
+            Cancel
+          </LoadingButton>
+          <LoadingButton
+            className="bg-indigo-600 hover:bg-indigo-700 text-white"
+            pending={sendM.isPending}
+            pendingText="Sending…"
+            onClick={() => sendM.mutate()}
+          >
+            Send
+          </LoadingButton>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -315,8 +411,24 @@ export default function DevicesPage() {
   const qc = useQueryClient();
   const { toasts, push, remove } = useToasts();
 
-  const devicesQ = useQuery({ queryKey: ['devices'], queryFn: listDevices });
-  const configQ = useQuery({ queryKey: ['config'], queryFn: () => getUserConfig('DASHBOARD-PLACEHOLDER') });
+  // Global broadcast modal
+  const [openBroadcast, setOpenBroadcast] = useState(false);
+  const [bTarget, setBTarget] = useState<'client' | 'service'>('client');
+  const [bType, setBType] = useState<string>('hide');
+  const [bPayload, setBPayload] = useState('{"message":"Hello from server 🎯"}');
+
+  const devicesQ = useQuery({
+    queryKey: ['devices'],
+    queryFn: listDevices,
+    // live refresh so heartbeat status updates while the tab is open
+    refetchInterval: 10000,
+    refetchOnWindowFocus: 'always',
+  });
+
+  const configQ = useQuery({
+    queryKey: ['config'],
+    queryFn: () => getUserConfig('DASHBOARD-PLACEHOLDER'),
+  });
 
   const delAll = useMutation({
     mutationFn: deleteAllDevices,
@@ -324,9 +436,28 @@ export default function DevicesPage() {
     onError: (e: any) => push({ tone: 'error', title: 'Delete failed', desc: e?.message || '' }),
   });
 
+  // Broadcast mutation
+  const broadcastM = useMutation({
+    mutationFn: async () => {
+      let payload: any = {};
+      try { payload = bPayload ? JSON.parse(bPayload) : {}; }
+      catch (e: any) { throw new Error(`Invalid JSON: ${e?.message || e}`); }
+      return broadcastCommand({ target: bTarget, type: bType, payload });
+    },
+    onSuccess: () => {
+      push({ tone: 'success', title: 'Command queued to all devices' });
+      setOpenBroadcast(false);
+      qc.invalidateQueries({ queryKey: ['pending-commands'] }); // best-effort fanout
+    },
+    onError: (e: any) => push({ tone: 'error', title: 'Broadcast failed', desc: e?.message || '' }),
+  });
+
   const devices: Device[] = Array.isArray(devicesQ.data) ? devicesQ.data : devicesQ.data?.devices ?? [];
   const clientDelay = configQ.data?.clientHeartbeatDelay ?? null;
   const serviceDelay = configQ.data?.serviceHeartbeatDelay ?? null;
+
+  // Types for broadcast modal
+  const bTYPES = bTarget === 'client' ? CLIENT_TYPES : SERVICE_TYPES;
 
   return (
     <div className="container main-wrap space-y-6">
@@ -335,6 +466,12 @@ export default function DevicesPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-slate-900">Device Control Center</h1>
         <div className="flex items-center gap-2">
+          <LoadingButton
+            className="bg-indigo-600 hover:bg-indigo-700 text-white"
+            onClick={() => setOpenBroadcast(true)}
+          >
+            Send Command to All
+          </LoadingButton>
           <LoadingButton
             className="bg-white border text-slate-700 hover:bg-slate-50"
             pending={devicesQ.isFetching}
@@ -379,6 +516,62 @@ export default function DevicesPage() {
           ))}
         </div>
       )}
+
+      {/* Broadcast modal */}
+      <Modal open={openBroadcast} onClose={() => setOpenBroadcast(false)} title="Send Command to All Devices" widthClass="w-[700px]">
+        <div className="grid md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Target</label>
+            <select
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              value={bTarget}
+              onChange={(e) => {
+                const t = e.target.value as 'client' | 'service';
+                setBTarget(t);
+                setBType(t === 'client' ? 'hide' : 'restart-service');
+              }}
+            >
+              <option value="client">client</option>
+              <option value="service">service</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-700 mb-1">Type</label>
+            <select
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              value={bType}
+              onChange={(e) => setBType(e.target.value)}
+            >
+              {(bTYPES as readonly string[]).map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-sm text-slate-700 mb-1">Payload (JSON)</label>
+            <textarea
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono h-36 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              value={bPayload}
+              onChange={(e) => setBPayload(e.target.value)}
+              placeholder='{"message":"Hello from server 🎯"}'
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 mt-5">
+          <LoadingButton className="bg-white border text-slate-700 hover:bg-slate-50" onClick={() => setOpenBroadcast(false)}>
+            Cancel
+          </LoadingButton>
+          <LoadingButton
+            className="bg-indigo-600 hover:bg-indigo-700 text-white"
+            pending={broadcastM.isPending}
+            pendingText="Sending…"
+            onClick={() => broadcastM.mutate()}
+          >
+            Send to All
+          </LoadingButton>
+        </div>
+      </Modal>
     </div>
   );
 }
