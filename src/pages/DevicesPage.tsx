@@ -483,7 +483,7 @@ export default function DevicesPage() {
     if (deviceId) {
       qc.invalidateQueries({ queryKey: ["commands-summary", deviceId] });
     } else {
-      const cached = qc.getQueryCache().findAll("commands-summary");
+      const cached = qc.getQueryCache().findAll({ queryKey: ["commands-summary"] });
       cached.forEach((q) =>
         qc.invalidateQueries({ queryKey: q.queryKey as any })
       );

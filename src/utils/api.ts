@@ -177,6 +177,7 @@ export async function listCommands(params?: {
   to?: string | number | Date;
   skip?: number;
   limit?: number;
+  sort?: 'asc' | 'desc';
 }) {
   const { data } = await api.get('/commands/list', { params });
   // Backend responds with { ok, data: [], meta } 
