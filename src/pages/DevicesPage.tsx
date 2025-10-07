@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   listDevices,
@@ -440,13 +440,24 @@ export default function DevicesPage() {
     queryFn: listDevices,
     refetchInterval: refreshInterval,
     refetchOnWindowFocus: false,
-    onSuccess: (data) => {
-      const list = Array.isArray(data?.devices) ? data.devices : data || [];
-      list.forEach((d: any) =>
-        qc.invalidateQueries({ queryKey: ["commands-summary", d.deviceId] })
-      );
-    },
   });
+
+  // ✅ Keep command summaries in sync with device list (even during auto-refresh)
+  useEffect(() => {
+    if (!devicesQ.data) return;
+
+    // Handle both plain arrays and { devices: [...] } responses
+    const list = Array.isArray(devicesQ.data?.devices)
+      ? devicesQ.data.devices
+      : devicesQ.data;
+
+    if (!Array.isArray(list)) return;
+
+    // Invalidate all summaries for currently listed devices
+    list.forEach((d: any) =>
+      qc.invalidateQueries({ queryKey: ["commands-summary", d.deviceId] })
+    );
+  }, [devicesQ.data, qc]);
 
   const delAll = useMutation({
     mutationFn: deleteAllDevices,
