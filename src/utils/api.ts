@@ -111,9 +111,8 @@ export type ConfigPayload = {
   serviceHeartbeatDelay?: number;
 };
 
-// ✅ Fixed endpoint: backend expects /config/user
 export async function getUserConfig(deviceId: string) {
-  const { data } = await api.post('/config/user', { deviceId });
+  const { data } = await api.post('/config/user-config', { deviceId });
   return data?.data ?? data;
 }
 

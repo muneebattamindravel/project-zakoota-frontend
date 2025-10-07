@@ -1,343 +1,292 @@
-import { useMemo, useState } from 'react';
+// DevicesPage.tsx
+// --------------------------------------
+// ✅ Integrated with utils/status.ts
+// ✅ 12-hour clock for Last Seen
+// ✅ Uses centralized getDeviceStatuses()
+// ✅ Manual refresh only
+// ✅ Commands History modal
+// ✅ Delete confirmation popup
+// ✅ Built-in SVG refresh icon (no lucide dependency)
+
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   listDevices,
   assignDevice,
   deleteAllDevices,
   getUserConfig,
-  // commands
-  getPendingCommands,
-  acknowledgeCommand,
-  createCommand,          // <-- add in api.ts
-  broadcastCommand,       // <-- add in api.ts
+  listCommands,
+  createCommand,
 } from '../utils/api';
 import type { Device } from '../utils/types';
-import {
-  Badge,
-  Modal,
-  SectionCard,
-  Spinner,
-  Toasts,
-  useToasts,
-} from '../components/ui';
+import { Badge, Modal, Spinner, Toasts, useToasts } from '../components/ui';
 import LoadingButton from '../components/ui/LoadingButton';
+import { getDeviceStatuses } from '../utils/status';
 
-type PendingCommand = {
-  _id?: string;
-  id?: string;
-  deviceId: string;
-  type: string;
-  status?: string;
-  createdAt?: string;
-  payload?: any;
-  target?: 'client' | 'service';
-};
+// Simple SVG refresh icon (no dependency)
+const RefreshIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    className="h-4 w-4"
+    fill="none"
+    viewBox="0 0 24 24"
+    stroke="currentColor"
+    strokeWidth={2}
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M4 4v6h6M20 20v-6h-6M5 19A9 9 0 0119 5l1 1"
+    />
+  </svg>
+);
 
-const CLIENT_TYPES = [
-  'show-popup',
-  'focus-hours-start',
-  'focus-hours-end',
-  'hide',
-  'refresh',
-  'lock',
-  'requires-update',
-] as const;
-
-const SERVICE_TYPES = ['restart-service', 'restart-client'] as const;
-
-function cmdId(c: PendingCommand) {
-  return c._id ?? c.id ?? '';
-}
-
+// Format datetime to 12-hour clock
 function fmt(dt?: string | number | Date) {
   if (!dt) return '—';
-  try { return new Date(dt).toLocaleString(); } catch { return String(dt); }
+  try {
+    const d = new Date(dt);
+    return d.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    return '—';
+  }
 }
 
-function LabeledInput({
-  label, value, onChange, placeholder, type = 'text',
-}: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string; }) {
-  return (
-    <div>
-      <label className="block text-sm text-slate-700 mb-1">{label}</label>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
-      />
-    </div>
-  );
-}
-
+/* --------------------------- Device Card --------------------------- */
 function DeviceCard({
   device,
   clientDelay,
   serviceDelay,
   onToast,
+  refetchDevices,
 }: {
   device: Device;
   clientDelay: number | null;
   serviceDelay: number | null;
   onToast: ReturnType<typeof useToasts>['push'];
+  refetchDevices: () => void;
 }) {
   const qc = useQueryClient();
 
-  // Assign modal
   const [openAssign, setOpenAssign] = useState(false);
+  const [openCmd, setOpenCmd] = useState(false);
+  const [openHistory, setOpenHistory] = useState(false);
+
   const [username, setUsername] = useState(device.username ?? '');
-  const [userId, setUserId] = useState(device.userId ?? '');
   const [name, setName] = useState(device.name ?? '');
   const [designation, setDesignation] = useState(device.designation ?? '');
   const [profileURL, setProfileURL] = useState(device.profileURL ?? '');
-  const [checkInTime, setCheckInTime] = useState(
-    device.checkInTime ? new Date(device.checkInTime).toISOString().slice(0, 16) : ''
+
+  const [target, setTarget] = useState<'client' | 'service'>('client');
+  const [cmdType, setCmdType] = useState('hide');
+  const [payload, setPayload] = useState(
+    '{"message":"Hello from server 🎯"}'
   );
 
-  // Send command modal (per-device)
-  const [openCmd, setOpenCmd] = useState(false);
-  const [target, setTarget] = useState<'client' | 'service'>('client');
-  const [cmdType, setCmdType] = useState<string>('hide');
-  const [cmdPayload, setCmdPayload] = useState('{"message":"Hello from server 🎯"}');
-
-  // Per-row loaders
-  const [ackingId, setAckingId] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-
-  // Pending commands (no side-effects)
-  const pendingQ = useQuery({
-    queryKey: ['pending-commands', device.deviceId],
-    queryFn: () => getPendingCommands(device.deviceId) as Promise<PendingCommand[]>,
-    // refresh pending list periodically too
-    refetchInterval: 10000,
-    refetchOnWindowFocus: 'always',
-  });
-
-  const refetchPending = async () => {
-    try { setRefreshing(true); await qc.invalidateQueries({ queryKey: ['pending-commands', device.deviceId] }); }
-    finally { setRefreshing(false); }
-  };
-
-  const pendingList: PendingCommand[] = Array.isArray(pendingQ.data) ? pendingQ.data : [];
-  const firstPending = useMemo(() => pendingList[0] ?? null, [pendingList]);
-
-  // Assign mutation
+  // Mutations
   const assignM = useMutation({
-    mutationFn: () => assignDevice(device.deviceId, {
-      username: username || undefined,
-      userId: userId || undefined,
-      name: name || undefined,
-      designation: designation || undefined,
-      profileURL: profileURL || undefined,
-      checkInTime: checkInTime || undefined,
-    }),
+    mutationFn: () =>
+      assignDevice(device.deviceId, {
+        username: username || undefined,
+        name: name || undefined,
+        designation: designation || undefined,
+        profileURL: profileURL || undefined,
+      }),
     onSuccess: () => {
       onToast({ tone: 'success', title: 'Device updated' });
       setOpenAssign(false);
       qc.invalidateQueries({ queryKey: ['devices'] });
     },
-    onError: (e: any) => onToast({ tone: 'error', title: 'Update failed', desc: e?.message || 'Try again' }),
+    onError: (e: any) =>
+      onToast({
+        tone: 'error',
+        title: 'Update failed',
+        desc: e?.message || 'Try again',
+      }),
   });
 
-  // Send command (single device)
   const sendM = useMutation({
     mutationFn: async () => {
-      let payload: any = {};
-      try { payload = cmdPayload ? JSON.parse(cmdPayload) : {}; }
-      catch (e: any) { throw new Error(`Invalid JSON: ${e?.message || e}`); }
-      return createCommand({ deviceId: device.deviceId, target, type: cmdType, payload });
+      let body: any;
+      try {
+        body = payload ? JSON.parse(payload) : {};
+      } catch (e: any) {
+        throw new Error(`Invalid JSON: ${e.message}`);
+      }
+      return createCommand({
+        deviceId: device.deviceId,
+        target,
+        type: cmdType,
+        payload: body,
+      });
     },
     onSuccess: () => {
-      onToast({ tone: 'success', title: 'Command queued' });
+      onToast({ tone: 'success', title: 'Command sent' });
       setOpenCmd(false);
-      refetchPending();
     },
-    onError: (e: any) => onToast({ tone: 'error', title: 'Send failed', desc: e?.message || 'Check payload' }),
+    onError: (e: any) =>
+      onToast({
+        tone: 'error',
+        title: 'Send failed',
+        desc: e?.message || 'Try again',
+      }),
   });
 
-  const onAck = async (id: string) => {
-    if (!id) return;
-    try {
-      setAckingId(id);
-      await acknowledgeCommand(id);
-      onToast({ tone: 'success', title: 'Acknowledged' });
-      refetchPending();
-    } catch (e: any) {
-      onToast({ tone: 'error', title: 'Acknowledge failed', desc: e?.message || '' });
-    } finally {
-      setAckingId(null);
-    }
-  };
+  const historyQ = useQuery({
+    enabled: openHistory,
+    queryKey: ['commands-history', device.deviceId],
+    queryFn: () =>
+      listCommands({ deviceId: device.deviceId, limit: 20, sort: 'desc' }),
+  });
+  
+  const history = Array.isArray(historyQ.data?.items)
+    ? historyQ.data.items
+    : [];
 
-  // Status (delay-aware)
-  const now = Date.now();
-  let clientTone: 'green' | 'amber' | 'red' | 'gray' = 'gray';
-  let serviceTone: 'green' | 'amber' | 'red' | 'gray' = 'gray';
-  if (clientDelay) {
-    const diff = device.lastClientHeartbeat ? now - new Date(device.lastClientHeartbeat).getTime() : Infinity;
-    clientTone = diff < clientDelay * 1.2 ? 'green' : diff < clientDelay * 4 ? 'amber' : 'red';
-  }
-  if (serviceDelay) {
-    const diff = device.lastServiceHeartbeat ? now - new Date(device.lastServiceHeartbeat).getTime() : Infinity;
-    serviceTone = diff < serviceDelay * 1.2 ? 'green' : diff < serviceDelay * 4 ? 'amber' : 'red';
-  }
+  // Use centralized status util
+  const { clientStatus, serviceStatus } = getDeviceStatuses(
+    device.lastClientHeartbeat,
+    device.lastServiceHeartbeat,
+    (clientDelay ?? 60000) / 1000,
+    (serviceDelay ?? 60000) / 1000
+  );
 
-  // Type list by target
-  const TYPES = target === 'client' ? CLIENT_TYPES : SERVICE_TYPES;
+  const lastSeen =
+    device.lastSeen || device.lastClientHeartbeat || device.lastServiceHeartbeat;
 
   return (
-    <div className="device-card w-full min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow transition-shadow">
+    <div className="device-card w-full rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow transition-shadow relative">
+      {/* Refresh icon per device */}
+      <button
+        className="absolute top-4 right-4 text-slate-400 hover:text-slate-700"
+        onClick={refetchDevices}
+        title="Refresh"
+      >
+        <RefreshIcon />
+      </button>
+
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 p-5 border-b">
-        <div className="flex items-start gap-4 min-w-0">
-          {device.profileURL ? (
-            <img className="h-12 w-12 rounded-full object-cover" src={device.profileURL} alt="" />
-          ) : (
-            <div className="h-12 w-12 rounded-full bg-gradient-to-br from-indigo-200 to-indigo-400 text-white flex items-center justify-center">
-              {(device.name ?? device.username ?? 'U').slice(0, 1).toUpperCase()}
+      <div className="flex items-center gap-4 p-5 border-b">
+        {device.profileURL ? (
+          <img
+            src={device.profileURL}
+            className="h-12 w-12 rounded-full object-cover"
+            alt=""
+          />
+        ) : (
+          <div className="h-12 w-12 rounded-full bg-indigo-500 text-white flex items-center justify-center font-medium">
+            {(device.name ?? device.username ?? 'U').slice(0, 1).toUpperCase()}
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="text-lg font-semibold text-slate-900 truncate">
+            {device.name ?? device.username ?? 'Unassigned'}
+          </div>
+          <div className="text-slate-500 text-sm truncate">
+            {device.designation ?? '-'}
+          </div>
+          <div className="text-xs text-slate-500 font-mono truncate">
+            {device.deviceId}
+          </div>
+        </div>
+      </div>
+
+      {/* Status */}
+      <div className="p-5 space-y-4">
+        <div className="flex flex-wrap justify-between gap-3 text-sm text-slate-700">
+          <div className="space-y-1">
+            <div>
+              Client:{' '}
+              <Badge tone={clientStatus === 'online' ? 'green' : 'red'}>
+                {clientStatus}
+              </Badge>
             </div>
-          )}
-          <div className="min-w-0">
-            <div className="text-lg font-semibold text-slate-900 truncate">
-              {device.name ?? device.username ?? 'Unassigned'}
+            <div>
+              Service:{' '}
+              <Badge tone={serviceStatus === 'online' ? 'green' : 'red'}>
+                {serviceStatus}
+              </Badge>
             </div>
-            <div className="text-slate-500 text-sm truncate">{device.designation ?? '-'}</div>
-            <div className="text-xs text-slate-500 font-mono truncate break-words">{device.deviceId}</div>
+          </div>
+          <div className="text-xs text-slate-500">
+            Last Seen
+            <br />
+            {fmt(lastSeen)}
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 md:shrink-0">
-          <LoadingButton className="bg-slate-100 hover:bg-slate-200 text-slate-800" onClick={() => setOpenAssign(true)}>
+        {/* Actions */}
+        <div className="flex flex-wrap gap-2 pt-2">
+          <LoadingButton
+            className="bg-slate-100 text-slate-800 hover:bg-slate-200"
+            onClick={() => setOpenAssign(true)}
+          >
             Assign
           </LoadingButton>
           <LoadingButton
-            className="bg-indigo-600 hover:bg-indigo-700 text-white"
+            className="bg-indigo-600 text-white hover:bg-indigo-700"
             onClick={() => setOpenCmd(true)}
           >
             Send Command
           </LoadingButton>
           <LoadingButton
-            className="bg-white border text-slate-700 hover:bg-slate-50"
-            pending={refreshing}
-            pendingText="Refreshing…"
-            onClick={refetchPending}
+            className="bg-white border text-slate-800 hover:bg-slate-50"
+            onClick={() => setOpenHistory(true)}
           >
-            Refresh
+            Commands History
           </LoadingButton>
         </div>
       </div>
 
-      {/* Body */}
-      <div className="p-5 grid gap-6 lg:grid-cols-3">
-        {/* Left column */}
-        <div className="space-y-4 lg:col-span-1">
-          <SectionCard title="Status">
-            <div className="flex flex-wrap gap-2">
-              <Badge tone={clientTone}>Client {clientTone === 'green' ? 'Online' : clientTone === 'amber' ? 'Idle' : 'Offline'}</Badge>
-              <Badge tone={serviceTone}>Service {serviceTone === 'green' ? 'Online' : serviceTone === 'amber' ? 'Idle' : 'Offline'}</Badge>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-700">
-              <div><div className="text-xs text-slate-500">Last Seen</div><div className="truncate">{fmt(device.lastSeen)}</div></div>
-              <div><div className="text-xs text-slate-500">Type</div><div className="truncate">{device.type ?? '—'}</div></div>
-            </div>
-          </SectionCard>
-
-          <SectionCard title="Command Summary">
-            <div className="space-y-2 text-sm text-slate-700">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-slate-500">Pending</div>
-                <div className="truncate">
-                  {firstPending ? `${firstPending.type} • ${fmt(firstPending.createdAt)}` : '—'}
-                </div>
-              </div>
-            </div>
-            {firstPending && (
-              <div className="mt-3">
-                <LoadingButton
-                  className="bg-amber-600 hover:bg-amber-700 text-white"
-                  pending={ackingId === cmdId(firstPending)}
-                  pendingText="Ack…"
-                  onClick={() => onAck(cmdId(firstPending))}
-                >
-                  Acknowledge
-                </LoadingButton>
-              </div>
-            )}
-          </SectionCard>
+      {/* Modals */}
+      <Modal
+        open={openAssign}
+        onClose={() => setOpenAssign(false)}
+        title="Assign Device"
+      >
+        <div className="grid gap-3">
+          <input
+            className="border rounded-md px-3 py-2"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="Username"
+          />
+          <input
+            className="border rounded-md px-3 py-2"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Full Name"
+          />
+          <input
+            className="border rounded-md px-3 py-2"
+            value={designation}
+            onChange={(e) => setDesignation(e.target.value)}
+            placeholder="Designation"
+          />
+          <input
+            className="border rounded-md px-3 py-2"
+            value={profileURL}
+            onChange={(e) => setProfileURL(e.target.value)}
+            placeholder="Profile Image URL"
+          />
         </div>
-
-        {/* Right: Pending commands list */}
-        <div className="lg:col-span-2">
-          <SectionCard title="Pending Commands">
-            {pendingQ.isLoading ? (
-              <div className="flex items-center gap-2 text-slate-600"><Spinner /> Loading…</div>
-            ) : pendingList.length === 0 ? (
-              <div className="text-slate-500">No pending commands.</div>
-            ) : (
-              <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Target</th>
-                      <th>Type</th>
-                      <th>Created</th>
-                      <th className="text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pendingList.map((c) => {
-                      const id = cmdId(c);
-                      return (
-                        <tr key={id || `${c.type}-${c.createdAt || Math.random()}`}>
-                          <td>{c.target ?? 'client'}</td>
-                          <td>{c.type}</td>
-                          <td>{fmt(c.createdAt)}</td>
-                          <td className="text-right">
-                            <LoadingButton
-                              className="border bg-white hover:bg-slate-50 text-slate-800"
-                              pending={ackingId === id}
-                              pendingText="Ack…"
-                              onClick={() => onAck(id)}
-                            >
-                              Acknowledge
-                            </LoadingButton>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </SectionCard>
-        </div>
-      </div>
-
-      {/* Assign Modal */}
-      <Modal open={openAssign} onClose={() => setOpenAssign(false)} title="Assign Device" widthClass="w-[700px]">
-        <div className="grid md:grid-cols-2 gap-4">
-          <LabeledInput label="Username" value={username} onChange={setUsername} placeholder="username" />
-          <LabeledInput label="User ID" value={userId} onChange={setUserId} placeholder="optional" />
-          <LabeledInput label="Full Name" value={name} onChange={setName} placeholder="John Doe" />
-          <LabeledInput label="Designation" value={designation} onChange={setDesignation} placeholder="Developer" />
-          <LabeledInput label="Profile Image URL" value={profileURL} onChange={setProfileURL} placeholder="https://..." />
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Check-in Time</label>
-            <input
-              type="datetime-local"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
-              value={checkInTime}
-              onChange={(e) => setCheckInTime(e.target.value)}
-            />
-          </div>
-        </div>
-        <div className="flex items-center justify-end gap-2 mt-5">
-          <LoadingButton className="bg-white border text-slate-700 hover:bg-slate-50" onClick={() => setOpenAssign(false)}>
+        <div className="flex justify-end gap-2 mt-4">
+          <LoadingButton
+            className="bg-white border text-slate-700 hover:bg-slate-50"
+            onClick={() => setOpenAssign(false)}
+          >
             Cancel
           </LoadingButton>
           <LoadingButton
-            className="bg-indigo-600 hover:bg-indigo-700 text-white"
+            className="bg-indigo-600 text-white hover:bg-indigo-700"
             pending={assignM.isPending}
             pendingText="Saving…"
             onClick={() => assignM.mutate()}
@@ -347,54 +296,97 @@ function DeviceCard({
         </div>
       </Modal>
 
-      {/* Send Command (single) */}
-      <Modal open={openCmd} onClose={() => setOpenCmd(false)} title={`Send Command to ${device.deviceId}`} widthClass="w-[660px]">
-        <div className="grid md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Target</label>
-            <select
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
-              value={target}
-              onChange={(e) => {
-                const t = e.target.value as 'client' | 'service';
-                setTarget(t);
-                // set default type for that target
-                setCmdType(t === 'client' ? 'hide' : 'restart-service');
-              }}
-            >
-              <option value="client">client</option>
-              <option value="service">service</option>
-            </select>
+      <Modal
+        open={openHistory}
+        onClose={() => setOpenHistory(false)}
+        title={`Commands History – ${device.deviceId}`}
+        widthClass="w-[800px]"
+      >
+        {historyQ.isLoading ? (
+          <div className="flex items-center gap-2 text-slate-600">
+            <Spinner /> Loading history…
           </div>
+        ) : history.length === 0 ? (
+          <div className="text-slate-500">No commands yet.</div>
+        ) : (
+          <div className="table-wrap max-h-[400px] overflow-y-auto">
+            <table className="table text-sm">
+              <thead>
+                <tr>
+                  <th>Target</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                  <th>Ack</th>
+                  <th>Completed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((c: any) => (
+                  <tr key={c._id}>
+                    <td>{c.target}</td>
+                    <td>{c.type}</td>
+                    <td>
+                      <Badge
+                        tone={
+                          c.status === 'completed'
+                            ? 'green'
+                            : c.status === 'acknowledged'
+                            ? 'amber'
+                            : 'gray'
+                        }
+                      >
+                        {c.status}
+                      </Badge>
+                    </td>
+                    <td>{fmt(c.createdAt)}</td>
+                    <td>{fmt(c.acknowledgedAt)}</td>
+                    <td>{fmt(c.completedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
 
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Type</label>
-            <select
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
-              value={cmdType}
-              onChange={(e) => setCmdType(e.target.value)}
-            >
-              {(TYPES as readonly string[]).map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="block text-sm text-slate-700 mb-1">Payload (JSON)</label>
-            <textarea
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono h-36 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-              value={cmdPayload}
-              onChange={(e) => setCmdPayload(e.target.value)}
-              placeholder='{"message":"Hello from server 🎯"}'
-            />
-          </div>
+      <Modal
+        open={openCmd}
+        onClose={() => setOpenCmd(false)}
+        title={`Send Command to ${device.deviceId}`}
+      >
+        <div className="grid gap-3">
+          <select
+            className="border rounded-md px-3 py-2"
+            value={target}
+            onChange={(e) =>
+              setTarget(e.target.value as 'client' | 'service')
+            }
+          >
+            <option value="client">client</option>
+            <option value="service">service</option>
+          </select>
+          <input
+            className="border rounded-md px-3 py-2"
+            value={cmdType}
+            onChange={(e) => setCmdType(e.target.value)}
+            placeholder="Command type"
+          />
+          <textarea
+            className="border rounded-md px-3 py-2 font-mono h-32"
+            value={payload}
+            onChange={(e) => setPayload(e.target.value)}
+          />
         </div>
-
-        <div className="flex items-center justify-end gap-2 mt-5">
-          <LoadingButton className="bg-white border text-slate-700 hover:bg-slate-50" onClick={() => setOpenCmd(false)}>
+        <div className="flex justify-end gap-2 mt-4">
+          <LoadingButton
+            className="bg-white border text-slate-700 hover:bg-slate-50"
+            onClick={() => setOpenCmd(false)}
+          >
             Cancel
           </LoadingButton>
           <LoadingButton
-            className="bg-indigo-600 hover:bg-indigo-700 text-white"
+            className="bg-indigo-600 text-white hover:bg-indigo-700"
             pending={sendM.isPending}
             pendingText="Sending…"
             onClick={() => sendM.mutate()}
@@ -407,84 +399,68 @@ function DeviceCard({
   );
 }
 
+/* --------------------------- Main Devices Page --------------------------- */
 export default function DevicesPage() {
   const qc = useQueryClient();
   const { toasts, push, remove } = useToasts();
-
-  // Global broadcast modal
-  const [openBroadcast, setOpenBroadcast] = useState(false);
-  const [bTarget, setBTarget] = useState<'client' | 'service'>('client');
-  const [bType, setBType] = useState<string>('hide');
-  const [bPayload, setBPayload] = useState('{"message":"Hello from server 🎯"}');
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const devicesQ = useQuery({
     queryKey: ['devices'],
     queryFn: listDevices,
-    // live refresh so heartbeat status updates while the tab is open
-    refetchInterval: 10000,
-    refetchOnWindowFocus: 'always',
+    refetchOnWindowFocus: false,
   });
 
   const configQ = useQuery({
     queryKey: ['config'],
-    queryFn: () => getUserConfig('DASHBOARD-PLACEHOLDER'),
+    queryFn: () => getUserConfig('DASHBOARD'),
   });
 
   const delAll = useMutation({
     mutationFn: deleteAllDevices,
-    onSuccess: () => { push({ tone: 'success', title: 'All devices deleted' }); qc.invalidateQueries({ queryKey: ['devices'] }); },
-    onError: (e: any) => push({ tone: 'error', title: 'Delete failed', desc: e?.message || '' }),
-  });
-
-  // Broadcast mutation
-  const broadcastM = useMutation({
-    mutationFn: async () => {
-      let payload: any = {};
-      try { payload = bPayload ? JSON.parse(bPayload) : {}; }
-      catch (e: any) { throw new Error(`Invalid JSON: ${e?.message || e}`); }
-      return broadcastCommand({ target: bTarget, type: bType, payload });
-    },
     onSuccess: () => {
-      push({ tone: 'success', title: 'Command queued to all devices' });
-      setOpenBroadcast(false);
-      qc.invalidateQueries({ queryKey: ['pending-commands'] }); // best-effort fanout
+      push({ tone: 'success', title: 'All devices deleted' });
+      setConfirmOpen(false);
+      qc.invalidateQueries({ queryKey: ['devices'] });
     },
-    onError: (e: any) => push({ tone: 'error', title: 'Broadcast failed', desc: e?.message || '' }),
+    onError: (e: any) =>
+      push({
+        tone: 'error',
+        title: 'Delete failed',
+        desc: e?.message || '',
+      }),
   });
 
-  const devices: Device[] = Array.isArray(devicesQ.data) ? devicesQ.data : devicesQ.data?.devices ?? [];
-  const clientDelay = configQ.data?.clientHeartbeatDelay ?? null;
-  const serviceDelay = configQ.data?.serviceHeartbeatDelay ?? null;
+  const refetchDevices = () =>
+    qc.invalidateQueries({ queryKey: ['devices'] });
 
-  // Types for broadcast modal
-  const bTYPES = bTarget === 'client' ? CLIENT_TYPES : SERVICE_TYPES;
+  const devices: Device[] = Array.isArray(devicesQ.data)
+    ? devicesQ.data
+    : devicesQ.data?.devices ?? [];
+
+  const clientDelay = configQ.data?.clientHeartbeatDelay ?? 60000;
+  const serviceDelay = configQ.data?.serviceHeartbeatDelay ?? 60000;
 
   return (
     <div className="container main-wrap space-y-6">
       <Toasts items={toasts} onClose={remove} />
 
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-900">Device Control Center</h1>
-        <div className="flex items-center gap-2">
-          <LoadingButton
-            className="bg-indigo-600 hover:bg-indigo-700 text-white"
-            onClick={() => setOpenBroadcast(true)}
-          >
-            Send Command to All
-          </LoadingButton>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h1 className="text-2xl font-semibold text-slate-900">
+          Device Dashboard
+        </h1>
+        <div className="flex gap-2 flex-wrap">
           <LoadingButton
             className="bg-white border text-slate-700 hover:bg-slate-50"
             pending={devicesQ.isFetching}
             pendingText="Refreshing…"
-            onClick={() => qc.invalidateQueries({ queryKey: ['devices'] })}
+            onClick={refetchDevices}
           >
-            Refresh Devices
+            Refresh All
           </LoadingButton>
           <LoadingButton
             className="bg-rose-600 hover:bg-rose-700 text-white"
-            pending={delAll.isPending}
-            pendingText="Deleting…"
-            onClick={() => delAll.mutate()}
+            onClick={() => setConfirmOpen(true)}
           >
             Delete All
           </LoadingButton>
@@ -494,10 +470,6 @@ export default function DevicesPage() {
       {devicesQ.isLoading ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 flex items-center gap-3 text-slate-600">
           <Spinner /> Loading devices…
-        </div>
-      ) : devicesQ.error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-700">
-          {(devicesQ.error as any)?.message ?? 'Failed to load devices'}
         </div>
       ) : devices.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-slate-600">
@@ -512,63 +484,35 @@ export default function DevicesPage() {
               clientDelay={clientDelay}
               serviceDelay={serviceDelay}
               onToast={push}
+              refetchDevices={refetchDevices}
             />
           ))}
         </div>
       )}
 
-      {/* Broadcast modal */}
-      <Modal open={openBroadcast} onClose={() => setOpenBroadcast(false)} title="Send Command to All Devices" widthClass="w-[700px]">
-        <div className="grid md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Target</label>
-            <select
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
-              value={bTarget}
-              onChange={(e) => {
-                const t = e.target.value as 'client' | 'service';
-                setBTarget(t);
-                setBType(t === 'client' ? 'hide' : 'restart-service');
-              }}
-            >
-              <option value="client">client</option>
-              <option value="service">service</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm text-slate-700 mb-1">Type</label>
-            <select
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
-              value={bType}
-              onChange={(e) => setBType(e.target.value)}
-            >
-              {(bTYPES as readonly string[]).map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="block text-sm text-slate-700 mb-1">Payload (JSON)</label>
-            <textarea
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono h-36 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-              value={bPayload}
-              onChange={(e) => setBPayload(e.target.value)}
-              placeholder='{"message":"Hello from server 🎯"}'
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center justify-end gap-2 mt-5">
-          <LoadingButton className="bg-white border text-slate-700 hover:bg-slate-50" onClick={() => setOpenBroadcast(false)}>
+      <Modal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        title="Confirm Deletion"
+      >
+        <p className="text-slate-700 mb-4">
+          Are you sure you want to delete all devices? This action cannot be
+          undone.
+        </p>
+        <div className="flex justify-end gap-2">
+          <LoadingButton
+            className="bg-white border text-slate-700 hover:bg-slate-50"
+            onClick={() => setConfirmOpen(false)}
+          >
             Cancel
           </LoadingButton>
           <LoadingButton
-            className="bg-indigo-600 hover:bg-indigo-700 text-white"
-            pending={broadcastM.isPending}
-            pendingText="Sending…"
-            onClick={() => broadcastM.mutate()}
+            className="bg-rose-600 hover:bg-rose-700 text-white"
+            pending={delAll.isPending}
+            pendingText="Deleting…"
+            onClick={() => delAll.mutate()}
           >
-            Send to All
+            Delete All
           </LoadingButton>
         </div>
       </Modal>

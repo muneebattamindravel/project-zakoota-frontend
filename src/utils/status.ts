@@ -29,8 +29,8 @@ export function getDeviceStatuses(
   let serviceStatus: 'online' | 'offline' = 'offline';
   if (lastServiceHeartbeat) {
     const diffMs = now - new Date(lastServiceHeartbeat).getTime();
-    if (diffMs <= serviceDelaySec * 2500) {
-      // 2.5x the serviceHeartbeatDelay
+    if (diffMs <= serviceDelaySec * 1500) {
+      // 1.5x the serviceHeartbeatDelay
       serviceStatus = 'online';
     }
   }
