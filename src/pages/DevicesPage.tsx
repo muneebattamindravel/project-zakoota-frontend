@@ -492,7 +492,7 @@ export default function DevicesPage() {
 
   const devices: Device[] = Array.isArray(devicesQ.data)
     ? devicesQ.data
-    : devicesQ.data?.devices ?? [];
+    : devicesQ.data?.devices ?? [];;
 
   return (
     <div className="container main-wrap space-y-6">
