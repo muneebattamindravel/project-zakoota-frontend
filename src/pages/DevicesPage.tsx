@@ -319,7 +319,9 @@ function DeviceCard({
             {(target === "service"
               ? ["restart-service", "restart-client"]
               : [
-                "show-popup",
+                "show-popup-announcement",
+                "show-popup-message",
+                "show-popup-celebration",
                 "focus-hours-start",
                 "focus-hours-end",
                 "hide",
