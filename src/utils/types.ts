@@ -10,6 +10,8 @@ export type Device = {
   type?: string;
   status?: string;
   lastSeen?: string;
+  clientStatus?: string;
+  serviceStatus?: string;
 
   userId?: string | null;
   username?: string | null;

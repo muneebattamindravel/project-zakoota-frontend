@@ -1,4 +1,4 @@
-import dayjs from 'dayjs';
+import dayjs from "dayjs";
 
 /** All durations from backend are in SECONDS. */
 export function fmtHMS(seconds: number) {
@@ -9,25 +9,29 @@ export function fmtHMS(seconds: number) {
   const m = Math.floor((s % 3600) / 60);
   const ss = s % 60;
 
-  const pad = (n: number) => String(n).padStart(2, '0');
+  const pad = (n: number) => String(n).padStart(2, "0");
 
-  // < 1 hour → "MMm SSs"
   if (h === 0) return `${pad(m)}m ${pad(ss)}s`;
-
-  // ≥ 1 hour → "HHh MMm SSs"
   return `${pad(h)}h ${pad(m)}m ${pad(ss)}s`;
 }
 
-// NEW: date-only + 12-hour time
-export function fmtDate(dt:any) {
-  return dt ? dayjs(dt).format('YYYY-MM-DD') : '-';
+/** Date-only (YYYY-MM-DD) */
+export function fmtDate(dt: any) {
+  return dt ? dayjs(dt).format("YYYY-MM-DD") : "-";
 }
 
-export function fmtTime12(dt:any) {
-  return dt ? dayjs(dt).format('hh:mm:ss A') : '-';
+/** 12-hour time only */
+export function fmtTime12(dt: any) {
+  return dt ? dayjs(dt).format("hh:mm:ss A") : "-";
 }
 
+/** Full local timestamp (24-hour) */
 export function fmtLocal(dt: any) {
-  if (!dt) return '-';
-  return dayjs(dt).format('YYYY-MM-DD HH:mm:ss');
+  if (!dt) return "-";
+  return dayjs(dt).format("YYYY-MM-DD HH:mm:ss");
+}
+
+/** NEW: date + 12-hour time (for dashboards) */
+export function fmtFull12(dt: any) {
+  return dt ? dayjs(dt).format("YYYY-MM-DD hh:mm:ss A") : "-";
 }
