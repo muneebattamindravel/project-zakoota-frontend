@@ -327,6 +327,14 @@ function DeviceCard({
                 "hide",
                 "refresh",
                 "lock",
+                "unlock",
+                "ping",
+                "attention",
+                "disco",
+                "rain",
+                "samosa-party",
+                "open-action",
+                "quote",
                 "requires-update",
               ]
             ).map((cmd) => (
