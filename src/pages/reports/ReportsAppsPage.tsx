@@ -13,7 +13,6 @@ export default function ReportsAppsPage() {
     username: d.username,
   }));
 
-
   const q = useQuery({ queryKey: ['apps', deviceId, from, to, top], enabled: !!deviceId, queryFn: () => logsApps(deviceId, new Date(from).toISOString(), new Date(to).toISOString(), top) });
   const data = Array.isArray(q.data) ? q.data : [];
   return (<div className='space-y-4'><h1 className='text-xl font-semibold'>Top Apps</h1>

@@ -179,7 +179,7 @@ export default function LogsExplorerPage() {
                                       <span className="font-semibold">
                                         {d.appName ?? d.processName}
                                       </span>{' '}
-                                      — {d.title ?? ''} · total {fmtHMS(d.total)}
+                                      {/* — {d.title ?? ''} · total {fmtHMS(d.total)} */}
                                     </div>
                                   ))}
                                 </td>
@@ -220,7 +220,7 @@ export default function LogsExplorerPage() {
                   <thead>
                     <tr>
                       <th>App</th>
-                      <th>Title</th>
+                      {/* <th>Title</th> */}
                       <th className="min-w-[130px]">Active</th>
                       <th className="min-w-[130px]">Idle</th>
                       <th>Mouse (move | scroll | click)</th>
@@ -231,7 +231,7 @@ export default function LogsExplorerPage() {
                     {(show.logDetails ?? []).map((d: any, i: number) => (
                       <tr key={i}>
                         <td>{d.appName ?? d.processName}</td>
-                        <td className="max-w-[520px] whitespace-nowrap text-ellipsis overflow-hidden">{d.title ?? ''}</td>
+                        {/* <td className="max-w-[520px] whitespace-nowrap text-ellipsis overflow-hidden">{d.title ?? ''}</td> */}
                         <td className="text-green-600 font-semibold">{fmtHMS(d.activeTime)}</td>
                         <td className="text-yellow-600 font-semibold">{fmtHMS(d.idleTime)}</td>
                         <td>{d.mouseMovements} movements | {d.mouseScrolls} scrolls | <b>{d.mouseClicks}</b> clicks</td>

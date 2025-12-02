@@ -30,9 +30,9 @@ export default function Navbar() {
           <Link to="/reports/apps" className={linkStyle(loc.pathname.startsWith('/reports/apps'))}>
             Apps
           </Link>
-          <Link to="/reports/titles" className={linkStyle(loc.pathname.startsWith('/reports/titles'))}>
+          {/* <Link to="/reports/titles" className={linkStyle(loc.pathname.startsWith('/reports/titles'))}>
             Titles
-          </Link>
+          </Link> */}
           <Link to="/health" className={linkStyle(loc.pathname.startsWith('/health'))}>
             Config
           </Link>
