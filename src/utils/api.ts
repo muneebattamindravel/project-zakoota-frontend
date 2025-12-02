@@ -109,6 +109,7 @@ export type ConfigPayload = {
   isZaiminaarEnabled?: boolean;
   clientHeartbeatDelay?: number;
   serviceHeartbeatDelay?: number;
+  allowQuit?: boolean;
 };
 
 export async function getUserConfig(deviceId: string) {
@@ -188,4 +189,10 @@ export async function listCommands(params?: {
     limit: Number(params?.limit ?? 50),
   };
   return { items: Array.isArray(items) ? items : [], meta };
+}
+
+// utils/api.ts
+export async function getCommandSummaries(deviceIds: string[]) {
+  const { data } = await api.post('/commands/summary', { deviceIds });
+  return data?.data?.map ?? {}; // returns { [deviceId]: { lastPending, lastAck, ... } }
 }

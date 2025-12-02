@@ -21,6 +21,7 @@ export default function HealthPage() {
   const [version, setVersion] = useState(1);
   const [userName, setUserName] = useState('');
   const [userProfileImageURL, setUserProfileImageURL] = useState('');
+  const [allowQuit, setAllowQuit] = useState(false);
 
   useEffect(() => {
     if (configQ.data) {
@@ -32,6 +33,7 @@ export default function HealthPage() {
       setUserName(configQ.data.name);
       setUserProfileImageURL(configQ.data.profileURL);
       setVersion(configQ.data.version);
+      setAllowQuit(Boolean(configQ.data.allowQuit));
     }
   }, [configQ.data]);
 
@@ -49,6 +51,7 @@ export default function HealthPage() {
       isZaiminaarEnabled,
       clientHeartbeatDelay: Number(clientDelay),
       serviceHeartbeatDelay: Number(serviceDelay),
+      allowQuit,
     });
   };
 
@@ -127,6 +130,20 @@ export default function HealthPage() {
                   onChange={(e) => setServiceDelay(Number(e.target.value))}
                   className="input w-full"
                 />
+              </div>
+
+              {/* ✅ NEW: Allow Quit */}
+              <div>
+                <label className="block text-sm font-medium mb-1">Allow Client Quit</label>
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 mr-2"
+                    checked={allowQuit}
+                    onChange={(e) => setAllowQuit(e.target.checked)}
+                  />
+                  <span className="text-sm">Allow the Zakoota client to quit/exit via UI</span>
+                </div>
               </div>
 
               <div className="text-sm text-slate-500">
