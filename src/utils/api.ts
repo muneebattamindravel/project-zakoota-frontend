@@ -207,3 +207,163 @@ export async function getCommandSummaries(deviceIds: string[]) {
   const { data } = await api.post('/commands/summary', { deviceIds });
   return data?.data?.map ?? {}; // returns { [deviceId]: { lastPending, lastAck, ... } }
 }
+
+// // --- Device Logs (chunks/list or logs/list) ---
+// export async function getDeviceLogs(params: {
+//   deviceId: string;
+//   from?: string; // YYYY-MM-DD
+//   to?: string;   // YYYY-MM-DD
+//   skip?: number;
+//   limit?: number;
+// }) {
+//   const { data } = await api.get('/logs/list', { params });
+//   const items = Array.isArray(data?.data) ? data.data : [];
+//   const meta = data?.meta ?? {
+//     total: items.length,
+//     skip: Number(params?.skip ?? 0),
+//     limit: Number(params?.limit ?? 50),
+//   };
+//   return { items, meta };
+// }
+
+// // --- Apps summary per device ---
+// export async function getDeviceApps(params: {
+//   deviceId: string;
+//   from?: string;
+//   to?: string;
+//   skip?: number;
+//   limit?: number;
+// }) {
+//   // If your backend route is /reports/apps/list use that; otherwise adjust.
+//   const { data } = await api.get('/reports/apps', { params });
+//   const items = Array.isArray(data?.data) ? data.data : [];
+//   const meta = data?.meta ?? {
+//     total: items.length,
+//     skip: Number(params?.skip ?? 0),
+//     limit: Number(params?.limit ?? 100),
+//   };
+//   return { items, meta };
+// }
+
+// // --- Titles summary per device ---
+// export async function getDeviceTitles(params: {
+//   deviceId: string;
+//   from?: string;
+//   to?: string;
+//   skip?: number;
+//   limit?: number;
+// }) {
+//   const { data } = await api.get('/reports/titles', { params });
+//   const items = Array.isArray(data?.data) ? data.data : [];
+//   const meta = data?.meta ?? {
+//     total: items.length,
+//     skip: Number(params?.skip ?? 0),
+//     limit: Number(params?.limit ?? 100),
+//   };
+//   return { items, meta };
+// }
+
+import type {
+  LogsListResponse,
+  AppsListResponse,
+  TitlesListResponse,
+  LogsListItem,
+  AppsListItem,
+  TitlesListItem,
+  ListMeta,
+} from "./types";
+
+// --- Add below your other API helpers ---
+
+export async function getDeviceLogs(params: {
+  deviceId: string;
+  from?: string; // ISO
+  to?: string;   // ISO
+  skip?: number;
+  limit?: number;
+}): Promise<LogsListResponse> {
+  const { data } = await api.get("/logs", { params });
+
+  // Support both shapes:
+  //  A) { ok, data: { chunks: [...] }, meta }
+  //  B) { ok, data: [...] , meta }
+  const rawChunks: any[] = Array.isArray(data?.data?.chunks)
+    ? data.data.chunks
+    : Array.isArray(data?.data)
+      ? data.data
+      : [];
+
+  const items: LogsListItem[] = rawChunks.map((c: any) => {
+    // pick a representative detail line (max activeTime)
+    let topApp: string | undefined = undefined;
+    let topTitle: string | undefined = undefined;
+    if (Array.isArray(c?.logDetails) && c.logDetails.length > 0) {
+      const best = [...c.logDetails].sort(
+        (a, b) => (Number(b?.activeTime || 0) - Number(a?.activeTime || 0))
+      )[0];
+      topApp = best?.appName || best?.processName || undefined;
+      topTitle = best?.title || undefined;
+    }
+
+    return {
+      _id: c?._id,
+      startAt: c?.startAt || c?.startedAt || c?.createdAt,
+      endAt: c?.endAt || c?.endedAt || c?.updatedAt,
+      createdAt: c?.createdAt,
+      updatedAt: c?.updatedAt,
+      // normalize durations to seconds
+      activeSeconds:
+        Number(c?.logTotals?.activeTime ?? c?.activeSeconds ?? c?.active ?? 0),
+      idleSeconds:
+        Number(c?.logTotals?.idleTime ?? c?.idleSeconds ?? c?.idle ?? 0),
+      topApp,
+      topTitle,
+      __raw: c,
+    };
+  });
+
+  const meta: ListMeta =
+    data?.meta ?? {
+      total: items.length,
+      skip: Number(params?.skip ?? 0),
+      limit: Number(params?.limit ?? 50),
+    };
+
+  return { items, meta };
+}
+
+export async function getDeviceApps(params: {
+  deviceId: string;
+  from?: string;
+  to?: string;
+  skip?: number;
+  limit?: number;
+}): Promise<AppsListResponse> {
+  // If your route is '/reports/apps/list', change it here.
+  const { data } = await api.get("/reports/apps", { params });
+  const items: AppsListItem[] = Array.isArray(data?.data) ? data.data : [];
+  const meta: ListMeta = data?.meta ?? {
+    total: items.length,
+    skip: Number(params?.skip ?? 0),
+    limit: Number(params?.limit ?? 100),
+  };
+  return { items, meta };
+}
+
+export async function getDeviceTitles(params: {
+  deviceId: string;
+  from?: string;
+  to?: string;
+  skip?: number;
+  limit?: number;
+}): Promise<TitlesListResponse> {
+  const { data } = await api.get("/reports/titles", { params });
+  const items: TitlesListItem[] = Array.isArray(data?.data) ? data.data : [];
+  const meta: ListMeta = data?.meta ?? {
+    total: items.length,
+    skip: Number(params?.skip ?? 0),
+    limit: Number(params?.limit ?? 100),
+  };
+  return { items, meta };
+}
+

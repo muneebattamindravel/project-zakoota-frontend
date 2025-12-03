@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-    RefreshCw, Send, User, FileText, AppWindow, Grid2x2
+    RefreshCw, Send, User, AppWindow, Grid2x2, ListChecks, ScrollText
 } from "lucide-react";
 import { fmtHMS, fmtLocal, fmtAgo } from "../../utils/format";
 import DeviceAssignModal from "./DeviceAssignModal";
@@ -23,7 +23,7 @@ type CommandSummary = {
 function StatusDot({ online }: { online: boolean }) {
     return (
         <span
-            className={`inline-block h-2.5 w-2.5 rounded-full ${online ? "bg-emerald-500" : "bg-rose-500"
+            className={`inline-block h-2.5 w-2.5 rounded-full ring-2 ring-white ${online ? "bg-emerald-500" : "bg-rose-500"
                 }`}
             aria-label={online ? "online" : "offline"}
             title={online ? "online" : "offline"}
@@ -31,13 +31,13 @@ function StatusDot({ online }: { online: boolean }) {
     );
 }
 
-function MiniRadial({ percent }: { percent: number }) {
-    const data = useMemo(
-        () => [{ name: "active", value: Math.min(100, Math.max(0, percent)) }],
-        [percent]
-    );
+function MiniRadial({ percent, good }: { percent: number; good: boolean }) {
+    const val = Math.min(100, Math.max(0, Math.round(percent)));
+    const data = useMemo(() => [{ name: "active", value: val }], [val]);
+    const ringFill = good ? "#34d399" /* emerald-400 */ : "#f87171" /* rose-400 */;
+
     return (
-        <div className="w-16 h-16">
+        <div className="relative w-16 h-16">
             <ResponsiveContainer width="100%" height="100%">
                 <RadialBarChart
                     data={data}
@@ -47,9 +47,46 @@ function MiniRadial({ percent }: { percent: number }) {
                     endAngle={-270}
                 >
                     <PolarAngleAxis type="number" domain={[0, 100]} tick={false} axisLine={false} />
-                    <RadialBar background dataKey="value" cornerRadius={10} isAnimationActive={false} />
+                    <RadialBar
+                        background
+                        dataKey="value"
+                        cornerRadius={10}
+                        isAnimationActive={false}
+                        fill={ringFill}
+                    />
                 </RadialBarChart>
             </ResponsiveContainer>
+            <div className="absolute inset-0 flex items-center justify-center text-[11px] font-semibold text-slate-800">
+                {val}%
+            </div>
+        </div>
+    );
+}
+
+function StatPill({
+    label,
+    value,
+    tone = "slate",
+    title,
+}: {
+    label: string;
+    value: number | string;
+    tone?: "slate" | "amber" | "emerald" | "indigo";
+    title?: string;
+}) {
+    const toneMap: Record<string, string> = {
+        slate: "bg-slate-50 text-slate-700 ring-1 ring-slate-200",
+        amber: "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
+        emerald: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
+        indigo: "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200",
+    };
+    return (
+        <div
+            className={`px-2.5 py-1 rounded-full text-[11px] font-medium ${toneMap[tone]} whitespace-nowrap`}
+            title={title || `${label}: ${value}`}
+        >
+            <span className="opacity-70 mr-1">{label}</span>
+            <span className="font-semibold">{value}</span>
         </div>
     );
 }
@@ -69,7 +106,6 @@ export default function DeviceCard({
 }) {
     const qc = useQueryClient();
 
-    // Modals
     const [openAssign, setOpenAssign] = useState(false);
     const [openCmd, setOpenCmd] = useState(false);
     const [openHistory, setOpenHistory] = useState(false);
@@ -88,15 +124,15 @@ export default function DeviceCard({
         const idle = Math.max(0, Number(src?.idleSeconds ?? 0));
         const total = active + idle;
         const pct = total > 0 ? Math.round((active / total) * 100) : 0;
-        return { active, idle, total, pct };
+        return { active, idle, total, pct, good: active >= idle };
     })();
 
     const lastPending = summary?.lastPending ?? device?.commandsSummary?.lastPending ?? null;
     const lastAck = summary?.lastAck ?? device?.commandsSummary?.lastAck ?? null;
+    const totals = summary?.totals ?? device?.commandsSummary?.totals ?? {};
 
     const handleDeviceRefresh = async () => {
         await refetchDevices();
-        // If any code still caches summaries separately, this keeps it in sync harmlessly.
         qc.invalidateQueries({ queryKey: ["devices-optimized"] });
     };
 
@@ -105,94 +141,148 @@ export default function DeviceCard({
             {/* HEADER */}
             <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3 min-w-0">
-                    {device.profileURL ? (
-                        <img src={device.profileURL} className="h-10 w-10 rounded-full object-cover" alt="" />
-                    ) : (
-                        <div className="h-10 w-10 rounded-full bg-indigo-500 text-white flex items-center justify-center font-semibold">
-                            {(device.name ?? device.username ?? "U").slice(0, 1).toUpperCase()}
+                    <div className="relative">
+                        {device.profileURL ? (
+                            <img src={device.profileURL} className="h-12 w-12 rounded-full object-cover" alt="" />
+                        ) : (
+                            <div className="h-12 w-12 rounded-full bg-indigo-500 text-white flex items-center justify-center font-semibold">
+                                {(device.name ?? device.username ?? "U").slice(0, 1).toUpperCase()}
+                            </div>
+                        )}
+                        <div className="absolute -bottom-0 -right-0">
+                            <StatusDot online={device.clientStatus === "online"} />
                         </div>
-                    )}
+                    </div>
+
                     <div className="min-w-0">
-                        <div className="font-medium text-slate-900 truncate max-w-[160px]">
+                        <div className="font-semibold text-slate-900 truncate max-w-[180px]">
                             {device.name ?? device.username ?? "Unassigned"}
                         </div>
-                        <div className="text-xs text-slate-500 truncate max-w-[200px]">
+                        <div className="text-xs text-slate-500 truncate max-w-[220px]">
                             {device.designation ?? "—"}
                         </div>
-                        <div className="text-[11px] text-slate-400 truncate max-w-[220px]">
+                        <div className="text-[11px] text-slate-400 truncate max-w-[240px]">
                             {device.deviceId}
                         </div>
                     </div>
                 </div>
+
                 <button
                     className="text-slate-400 hover:text-slate-700"
                     onClick={handleDeviceRefresh}
-                    title="Refresh device & summaries"
+                    title="Refresh"
                 >
                     <RefreshCw className="h-4 w-4" />
                 </button>
             </div>
 
-            {/* STATUS STRIP */}
-            <div className="flex items-center justify-between rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
-                <div className="flex items-center gap-2">
-                    <StatusDot online={device.clientStatus === "online"} />
-                    <span className="text-slate-700">Client</span>
-                </div>
-                <div className="text-xs text-slate-500">
+            {/* META BAR (last seen only now) */}
+            <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 flex items-center justify-between">
+                <div className="text-xs text-slate-600">
                     <span className="mr-1">Last seen:</span>
                     <span title={fmtLocal(lastSeen)}>{fmtAgo(lastSeen)} ago</span>
                 </div>
             </div>
 
-            {/* TODAY'S ACTIVITY */}
-            <div className="rounded-xl border border-slate-200 p-3">
+            {/* TODAY'S ACTIVITY (ring color: green when active >= idle, else red) */}
+            <div className="rounded-2xl border border-slate-200 p-3">
                 <div className="flex items-center gap-3">
-                    <MiniRadial percent={activity.pct} />
-                    <div className="text-xs">
-                        <div className="font-medium text-slate-900">
-                            Today’s Activity{" "}
-                            {activity.total > 0 ? (
-                                <span className="ml-2 text-indigo-600">{activity.pct}% active</span>
-                            ) : (
-                                <span className="ml-2 text-slate-400">no data</span>
-                            )}
-                        </div>
-                        <div className="text-slate-600 mt-1">
-                            <span className="inline-block min-w-[64px]">
-                                Active:{" "}
+                    <MiniRadial percent={activity.pct} good={activity.good} />
+                    <div className="flex-1">
+                        <div className="mt-0.5 space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px] text-slate-600">
+                                <span>Active</span>
                                 <span className="font-semibold">
                                     {activity.total > 0 ? fmtHMS(activity.active) : "—"}
                                 </span>
-                            </span>
-                            <span className="inline-block min-w-[64px] ml-3">
-                                Idle:{" "}
+                            </div>
+                            <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                                <div
+                                    className="h-full bg-emerald-400"
+                                    style={{
+                                        width:
+                                            activity.total > 0
+                                                ? `${Math.min(100, (activity.active / Math.max(activity.total, 1)) * 100)}%`
+                                                : "0%",
+                                    }}
+                                />
+                            </div>
+
+                            <div className="flex items-center justify-between text-[11px] text-slate-600">
+                                <span>Idle</span>
                                 <span className="font-semibold">
                                     {activity.total > 0 ? fmtHMS(activity.idle) : "—"}
                                 </span>
-                            </span>
+                            </div>
+                            <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                                <div
+                                    className="h-full bg-rose-300"
+                                    style={{
+                                        width:
+                                            activity.total > 0
+                                                ? `${Math.min(100, (activity.idle / Math.max(activity.total, 1)) * 100)}%`
+                                                : "0%",
+                                    }}
+                                />
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* COMMAND SNAPSHOT */}
-            <div className="rounded-xl border border-slate-200 p-3">
+            {/* COMMANDS (all bundled: header actions + totals + last pending/ack) */}
+            <div className="rounded-2xl border border-slate-200 p-3">
+                <div className="flex items-center justify-between mb-2">
+                    <div className="text-xs font-medium text-slate-900">Commands</div>
+                    <div className="flex items-center gap-1">
+                        <button
+                            onClick={() => setOpenCmd(true)}
+                            className="p-2 rounded-lg hover:bg-indigo-100 text-indigo-600"
+                            title="Send Command"
+                        >
+                            <Send className="h-4 w-4" />
+                        </button>
+                        <button
+                            onClick={() => setOpenHistory(true)}
+                            className="p-2 rounded-lg hover:bg-slate-100 text-slate-700"
+                            title="Command History"
+                        >
+                            <ListChecks className="h-4 w-4" />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Mini totals inside Commands */}
+                <div className="flex items-center gap-1 mb-2">
+                    <StatPill
+                        label="Pending"
+                        value={Number(totals?.pending ?? 0)}
+                        tone="amber"
+                        title="Total pending commands"
+                    />
+                    <StatPill
+                        label="Ack"
+                        value={Number(totals?.acknowledged ?? 0)}
+                        tone="emerald"
+                        title="Total acknowledged commands"
+                    />
+                </div>
+
                 {summariesLoading ? (
                     <div className="text-xs text-slate-400">Updating command summary…</div>
-                ) : (lastPending || lastAck) ? (
-                    <div className="space-y-1 text-xs text-slate-700">
+                ) : lastPending || lastAck ? (
+                    <div className="space-y-1.5 text-xs text-slate-700">
                         {lastPending && (
                             <div>
                                 <span className="font-semibold text-amber-600">Pending:</span>{" "}
-                                <span>{lastPending.type}</span>{" "}
+                                <span className="font-medium">{lastPending.type}</span>{" "}
                                 <span className="text-slate-400">({fmtLocal(lastPending.createdAt)})</span>
                             </div>
                         )}
                         {lastAck && (
                             <div>
                                 <span className="font-semibold text-emerald-600">Ack:</span>{" "}
-                                <span>{lastAck.type}</span>{" "}
+                                <span className="font-medium">{lastAck.type}</span>{" "}
                                 <span className="text-slate-400">({fmtLocal(lastAck.acknowledgedAt)})</span>
                             </div>
                         )}
@@ -202,28 +292,14 @@ export default function DeviceCard({
                 )}
             </div>
 
-            {/* ACTIONS */}
+            {/* OTHER ACTIONS */}
             <div className="flex items-center gap-2">
-                <button
-                    onClick={() => setOpenCmd(true)}
-                    className="p-2 rounded-lg hover:bg-indigo-100 text-indigo-600"
-                    title="Send Command"
-                >
-                    <Send className="h-4 w-4" />
-                </button>
                 <button
                     onClick={() => setOpenAssign(true)}
                     className="p-2 rounded-lg hover:bg-slate-100 text-slate-700"
                     title="Assign"
                 >
                     <User className="h-4 w-4" />
-                </button>
-                <button
-                    onClick={() => setOpenHistory(true)}
-                    className="p-2 rounded-lg hover:bg-slate-100 text-slate-700"
-                    title="Command History"
-                >
-                    <FileText className="h-4 w-4" />
                 </button>
 
                 <div className="ml-auto flex gap-2">
@@ -232,7 +308,7 @@ export default function DeviceCard({
                         className="p-2 rounded-lg hover:bg-slate-100 text-slate-700"
                         title="Open Logs"
                     >
-                        <FileText className="h-4 w-4" />
+                        <ScrollText className="h-4 w-4" />
                     </button>
                     <button
                         onClick={() => setOpenApps(true)}

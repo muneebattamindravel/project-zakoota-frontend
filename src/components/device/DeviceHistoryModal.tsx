@@ -70,8 +70,7 @@ export default function DeviceHistoryModal({ open, onClose, device }: any) {
                         <tbody>
                             {history.map((c: any) => {
                                 const statusTone =
-                                    c.status === "completed" ? "green" :
-                                        c.status === "acknowledged" ? "amber" : "gray";
+                                    c.status === "acknowledged" ? "green" : "gray";
 
                                 const pretty = prettyPayload(c.payload);
                                 const isExpanded = expandedId === c._id;
