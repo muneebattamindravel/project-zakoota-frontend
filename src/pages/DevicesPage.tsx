@@ -1,10 +1,9 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
-  listDevices,
+  getDevicesOptimized,   // 👈 NEW: one call returns devices + summaries + activity
   deleteAllDevices,
   getUserConfig,
-  getCommandSummaries, // 👈 NEW: batch summaries API
 } from "../utils/api";
 import type { Device } from "../utils/types";
 import { Toasts, useToasts, Spinner, Modal } from "../components/ui";
@@ -32,36 +31,21 @@ export default function DevicesPage() {
   const clientDelay = configQ.data?.clientHeartbeatDelay ?? 60; // seconds
   const refreshInterval = clientDelay * 1000; // ms
 
-  // ✅ Devices query
+  // ✅ Devices (optimized): includes presence, lastSeen, commandsSummary, activityToday
   const devicesQ = useQuery({
-    queryKey: ["devices"],
-    queryFn: listDevices,
+    queryKey: ["devices-optimized"],
+    queryFn: getDevicesOptimized,
     refetchInterval: refreshInterval,
     refetchOnWindowFocus: false,
+    staleTime: 15_000,
   });
 
-  // ✅ Flatten data for easier access
-  const devices: Device[] = Array.isArray(devicesQ.data)
-    ? devicesQ.data
-    : devicesQ.data?.devices ?? [];
+  const devices: Device[] = Array.isArray(devicesQ.data) ? devicesQ.data : [];
 
-  // ✅ Batch command summaries for all devices
-  const deviceIds = useMemo(() => devices.map((d) => d.deviceId), [devices]);
-
-  const summariesQ = useQuery({
-    enabled: deviceIds.length > 0,
-    queryKey: ["commands-summary-batch", deviceIds],
-    queryFn: () => getCommandSummaries(deviceIds),
-    staleTime: 10_000,
-    refetchOnWindowFocus: false,
-  });
-
-  // ✅ Optional: keep legacy per-device invalidations harmless (no per-card queries now)
-  useEffect(() => {
-    if (!devicesQ.data) return;
-    // When devices update, refresh the batch summaries too.
-    qc.invalidateQueries({ queryKey: ["commands-summary-batch"] });
-  }, [devicesQ.data, qc]);
+  // ✅ Manual refresh logic
+  const refetchDevices = async () => {
+    await qc.invalidateQueries({ queryKey: ["devices-optimized"] });
+  };
 
   // ✅ Delete all devices mutation
   const delAll = useMutation({
@@ -69,18 +53,11 @@ export default function DevicesPage() {
     onSuccess: () => {
       push({ tone: "success", title: "All devices deleted" });
       setConfirmOpen(false);
-      qc.invalidateQueries({ queryKey: ["devices"] });
-      qc.invalidateQueries({ queryKey: ["commands-summary-batch"] });
+      qc.invalidateQueries({ queryKey: ["devices-optimized"] });
     },
     onError: (e: any) =>
       push({ tone: "error", title: "Delete failed", desc: e?.message }),
   });
-
-  // ✅ Manual refresh logic
-  const refetchDevices = async () => {
-    await qc.invalidateQueries({ queryKey: ["devices"] });
-    qc.invalidateQueries({ queryKey: ["commands-summary-batch"] });
-  };
 
   // ✅ Filter logic (search + status)
   const filteredDevices = useMemo(() => {
@@ -114,7 +91,7 @@ export default function DevicesPage() {
         <div className="flex gap-2 flex-wrap">
           <LoadingButton
             className="bg-white border text-slate-700 hover:bg-slate-50"
-            pending={devicesQ.isFetching || summariesQ.isFetching}
+            pending={devicesQ.isFetching}
             pendingText="Refreshing…"
             onClick={() => refetchDevices()}
           >
@@ -179,8 +156,8 @@ export default function DevicesPage() {
               device={d}
               onToast={push}
               refetchDevices={refetchDevices}
-              summary={summariesQ.data?.[d.deviceId]} // 👈 batch summary map
-              summariesLoading={summariesQ.isLoading}
+              summary={d.commandsSummary}          // 👈 comes from /devices/list-optimized
+              summariesLoading={devicesQ.isFetching}
             />
           ))}
         </div>

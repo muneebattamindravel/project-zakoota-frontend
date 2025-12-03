@@ -40,6 +40,17 @@ export async function listDevices() {
   return data?.data?.devices ?? data?.devices ?? data?.data ?? data ?? [];
 }
 
+// Returns: Array<{
+//   _id, deviceId, name, username, designation, profileURL, createdAt,
+//   clientStatus, lastSeen,
+//   commandsSummary: { lastPending?, lastAck?, totals? },
+//   activityToday?: { activeSeconds: number; idleSeconds: number } | null
+// }>
+export async function getDevicesOptimized() {
+  const { data } = await api.get('/devices/list-optimized');
+  return Array.isArray(data?.data) ? data.data : [];
+}
+
 export async function assignDevice(
   deviceId: string,
   body: {
