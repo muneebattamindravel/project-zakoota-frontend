@@ -27,7 +27,8 @@ export default function DeviceTitlesModal({ open, onClose, device }: Props) {
   const total = Number(q.data?.meta?.total ?? rows.length);
 
   return (
-    <Modal open={open} onClose={onClose} title={`Titles · ${device?.name || device?.username || "Unassigned"} — ${device?.deviceId || ""}`} className="max-w-4xl">
+    <Modal open={open} onClose={onClose} title={`Titles · ${device?.name || device?.username || "Unassigned"} — ${device?.deviceId || ""}`}
+      widthClass="max-w-none w-screen sm:w-[98vw] h-[90vh]">
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-3 mb-4">
         <div>
