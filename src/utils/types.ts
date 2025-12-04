@@ -25,6 +25,29 @@ export type Device = {
 
   lastClientHeartbeat?: string;
   lastServiceHeartbeat?: string;
+
+  commandsSummary?: CommandsSummary;
+};
+
+export type CommandRow = {
+  _id?: string;
+  command?: string;
+  target?: "client" | "service";
+  status?: "pending" | "acknowledged" | "completed";
+  payload?: any;
+  createdAt?: string;
+  acknowledgedAt?: string | null;
+  completedAt?: string | null;
+};
+
+export type CommandsSummary = {
+  lastAck?: CommandRow | null;
+  lastPending?: CommandRow | null;
+  counts?: {
+    pending?: number;
+    acknowledged?: number;
+    completed?: number;
+  };
 };
 
 export type ChunkDetail = {
