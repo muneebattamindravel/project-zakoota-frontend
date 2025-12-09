@@ -35,7 +35,7 @@ export default function DeviceLogsModal({ open, onClose, device }: Props) {
   const [limit, setLimit] = useState<number>(50);
   const [skip, setSkip] = useState<number>(0);
 
-  // Reset pagination when critical inputs change
+  // Reset pagination when inputs change
   useEffect(() => {
     if (open) setSkip(0);
   }, [open, device?.deviceId, fromDT, toDT, limit]);
@@ -71,7 +71,7 @@ export default function DeviceLogsModal({ open, onClose, device }: Props) {
       widthClass="max-w-none w-screen sm:w-[98vw] h-[90vh]"
     >
       <div className="flex flex-col h-full">
-        {/* Filters (header area stays above scroller) */}
+        {/* Filters */}
         <div className="shrink-0 mb-3">
           <div className="flex flex-wrap items-end gap-3">
             <div>
@@ -148,8 +148,8 @@ export default function DeviceLogsModal({ open, onClose, device }: Props) {
                   <th className="text-left font-medium px-3 py-2">End</th>
                   <th className="text-left font-medium px-3 py-2">Active</th>
                   <th className="text-left font-medium px-3 py-2">Idle</th>
-                  <th className="text-left font-medium px-3 py-2">Top App</th>
-                  <th className="text-left font-medium px-3 py-2">Top Title</th>
+                  <th className="text-left font-medium px-3 py-2">Top Apps (3)</th>
+                  <th className="text-left font-medium px-3 py-2">Top Titles (3)</th>
                 </tr>
               </thead>
               <tbody>
@@ -169,7 +169,11 @@ export default function DeviceLogsModal({ open, onClose, device }: Props) {
                   </tr>
                 ) : (
                   items.map((row) => {
-                    const { _id, startAt, endAt, activeSeconds, idleSeconds, topApp, topTitle } = row;
+                    const {
+                      _id, startAt, endAt, activeSeconds, idleSeconds,
+                      top3Apps, top3Titles, topApp, topTitle
+                    } = row;
+
                     return (
                       <tr
                         key={String(_id ?? `${startAt}-${endAt}-${Math.random()}`)}
@@ -193,8 +197,48 @@ export default function DeviceLogsModal({ open, onClose, device }: Props) {
                         </td>
                         <td className="px-3 py-2">{fmtHMS(Number(activeSeconds || 0))}</td>
                         <td className="px-3 py-2">{fmtHMS(Number(idleSeconds || 0))}</td>
-                        <td className="px-3 py-2">{topApp || "—"}</td>
-                        <td className="px-3 py-2">{topTitle || "—"}</td>
+
+                        {/* Top Apps (3) */}
+                        <td className="px-3 py-2">
+                          {Array.isArray(top3Apps) && top3Apps.length > 0 ? (
+                            <ul className="space-y-1">
+                              {top3Apps.map((a, i) => (
+                                <li key={i} className="text-[12px] leading-snug text-slate-700">
+                                  <span className="inline-block w-4 text-slate-400">{i + 1}.</span>
+                                  <span className="truncate inline-block max-w-[28ch]" title={a.app}>
+                                    {a.app}
+                                  </span>
+                                  <span className="ml-2 text-slate-400">
+                                    ({fmtHMS(Number(a.activeSeconds || 0))})
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <span>{topApp || "—"}</span>
+                          )}
+                        </td>
+
+                        {/* Top Titles (3) */}
+                        <td className="px-3 py-2">
+                          {Array.isArray(top3Titles) && top3Titles.length > 0 ? (
+                            <ul className="space-y-1">
+                              {top3Titles.map((t, i) => (
+                                <li key={i} className="text-[12px] leading-snug text-slate-700">
+                                  <span className="inline-block w-4 text-slate-400">{i + 1}.</span>
+                                  <span className="truncate inline-block max-w-[44ch]" title={t.title}>
+                                    {t.title}
+                                  </span>
+                                  <span className="ml-2 text-slate-400">
+                                    ({fmtHMS(Number(t.activeSeconds || 0))})
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <span>{topTitle || "—"}</span>
+                          )}
+                        </td>
                       </tr>
                     );
                   })

@@ -282,28 +282,71 @@ export async function getDeviceLogs(params: {
   skip?: number;
   limit?: number;
 }): Promise<LogsListResponse> {
-  const { data } = await api.get("/logs", { params });
+  if (!params?.deviceId) {
+    return { items: [], meta: { total: 0, limit: Number(params?.limit ?? 50), skip: Number(params?.skip ?? 0) } };
+  }
 
-  // Support both shapes:
+  const { data } = await api.get("/logs", {
+    params: {
+      deviceId: params.deviceId,
+      from: params.from,
+      to: params.to,
+      skip: Number(params?.skip ?? 0),
+      limit: Number(params?.limit ?? 50),
+    },
+  });
+
+  // Accept both shapes:
   //  A) { ok, data: { chunks: [...] }, meta }
   //  B) { ok, data: [...] , meta }
   const rawChunks: any[] = Array.isArray(data?.data?.chunks)
     ? data.data.chunks
     : Array.isArray(data?.data)
-      ? data.data
-      : [];
+    ? data.data
+    : [];
 
   const items: LogsListItem[] = rawChunks.map((c: any) => {
-    // pick a representative detail line (max activeTime)
-    let topApp: string | undefined = undefined;
-    let topTitle: string | undefined = undefined;
-    if (Array.isArray(c?.logDetails) && c.logDetails.length > 0) {
-      const best = [...c.logDetails].sort(
-        (a, b) => (Number(b?.activeTime || 0) - Number(a?.activeTime || 0))
-      )[0];
-      topApp = best?.appName || best?.processName || undefined;
-      topTitle = best?.title || undefined;
+    const details: any[] = Array.isArray(c?.logDetails) ? c.logDetails : [];
+
+    // Legacy best app/title (single-pass)
+    let bestTitle: string | undefined;
+    let bestApp: string | undefined;
+    let bestActive = -1;
+
+    // Aggregations for Top 3
+    const byTitle = new Map<string, number>();
+    const byApp = new Map<string, number>();
+
+    for (const d of details) {
+      const active = Number(d?.activeTime || 0);
+      const title = (d?.title || "").trim();
+      const app = (d?.appName || d?.processName || "").trim();
+
+      if (active > bestActive) {
+        bestActive = active;
+        bestTitle = title || bestTitle;
+        bestApp = app || bestApp;
+      }
+
+      if (title) byTitle.set(title, (byTitle.get(title) || 0) + active);
+      if (app) byApp.set(app, (byApp.get(app) || 0) + active);
     }
+
+    const top3Titles =
+      byTitle.size > 0
+        ? [...byTitle.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([title, sec]) => ({ title, activeSeconds: sec }))
+        : [];
+
+    const top3Apps =
+      byApp.size > 0
+        ? [...byApp.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([app, sec]) => ({ app, activeSeconds: sec }))
+        : [];
 
     return {
       _id: c?._id,
@@ -311,14 +354,12 @@ export async function getDeviceLogs(params: {
       endAt: c?.endAt || c?.endedAt || c?.updatedAt,
       createdAt: c?.createdAt,
       updatedAt: c?.updatedAt,
-      // normalize durations to seconds
-      activeSeconds:
-        Number(c?.logTotals?.activeTime ?? c?.activeSeconds ?? c?.active ?? 0),
-      idleSeconds:
-        Number(c?.logTotals?.idleTime ?? c?.idleSeconds ?? c?.idle ?? 0),
-      topApp,
-      topTitle,
-      __raw: c,
+      activeSeconds: Number(c?.logTotals?.activeTime ?? c?.activeSeconds ?? c?.active ?? 0),
+      idleSeconds: Number(c?.logTotals?.idleTime ?? c?.idleSeconds ?? c?.idle ?? 0),
+      topApp: bestApp,
+      topTitle: bestTitle,
+      top3Titles,
+      top3Apps,
     };
   });
 
@@ -331,6 +372,7 @@ export async function getDeviceLogs(params: {
 
   return { items, meta };
 }
+
 
 export async function getDeviceApps(params: {
   deviceId: string;

@@ -102,27 +102,32 @@ export type Paginated<T> = {
 // Kept flexible to accommodate both ActivityChunk and any existing rollups.
 export type LogsListItem = {
   _id?: string;
-  startAt?: string | Date;
-  endAt?: string | Date;
-  startedAt?: string | Date;
-  endedAt?: string | Date;
-  createdAt?: string | Date;
-  updatedAt?: string | Date;
-  // Totals / durations (seconds)
-  logTotals?: { activeTime?: number; idleTime?: number };
+  startAt?: string;
+  endAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
   activeSeconds?: number;
   idleSeconds?: number;
-  active?: number;
-  idle?: number;
-  // Top signals
-  topApp?: string;
-  topTitle?: string;
-  app?: string;
-  title?: string;
-  top?: { app?: string; title?: string };
+  topApp?: string;           // legacy single best app
+  topTitle?: string;         // legacy single best title
+  top3Titles?: TopTitleItem[]; // NEW
+  top3Apps?: TopAppItem[];     // NEW
 };
 
-export type LogsListResponse = Paginated<LogsListItem>;
+export type TopTitleItem = {
+  title: string;
+  activeSeconds: number; // seconds
+};
+
+export type TopAppItem = {
+  app: string;            // appName or processName
+  activeSeconds: number;  // seconds
+};
+
+export type LogsListResponse = {
+  items: LogsListItem[];
+  meta: ListMeta;
+};
 
 // APPS
 export type AppsListItem = {
