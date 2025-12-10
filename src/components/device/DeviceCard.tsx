@@ -118,6 +118,40 @@ export default function DeviceCard({
         device.lastClientHeartbeat ||
         device.lastServiceHeartbeat;
 
+
+
+    // 🔹 Today’s activity info from backend
+    const activityToday = device?.activityToday || null;
+
+    // When did work start today?
+    const firstChunkAt = activityToday?.firstChunkAt || null;
+    const workStartLabel =
+        firstChunkAt
+            ? new Date(firstChunkAt).toLocaleTimeString(undefined, {
+                hour: "2-digit",
+                minute: "2-digit",
+            })
+            : null;
+
+    // Current activity state based on latest fresh chunk + presence
+    const rawActivityState: "active" | "idle" | null | undefined =
+        activityToday?.activityState;
+
+    let currentActivityLabel = "No recent data";
+    let currentActivityTone: "emerald" | "amber" | "slate" = "slate";
+
+    if (device.clientStatus !== "online") {
+        currentActivityLabel = "Offline";
+        currentActivityTone = "slate";
+    } else if (rawActivityState === "active") {
+        currentActivityLabel = "Active now";
+        currentActivityTone = "emerald";
+    } else if (rawActivityState === "idle") {
+        currentActivityLabel = "Idle now";
+        currentActivityTone = "amber";
+    }
+
+
     const activity = (() => {
         const src = device?.activityToday || null;
         const active = Math.max(0, Number(src?.activeSeconds ?? 0));
@@ -176,13 +210,37 @@ export default function DeviceCard({
                 </button>
             </div>
 
-            {/* META BAR (last seen only now) */}
-            <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 flex items-center justify-between">
+            {/* META: last seen + work start today + current activity */}
+            <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 flex flex-col gap-1">
                 <div className="text-xs text-slate-600">
                     <span className="mr-1">Last seen:</span>
-                    <span title={fmtLocal(lastSeen)}>{fmtAgo(lastSeen)} ago</span>
+                    {lastSeen ? (
+                        <span title={fmtLocal(lastSeen)}>{fmtAgo(lastSeen)} ago</span>
+                    ) : (
+                        <span className="text-slate-400">—</span>
+                    )}
+                </div>
+
+                <div className="text-xs text-slate-600">
+                    <span className="mr-1">Work started today:</span>
+                    {workStartLabel ? (
+                        <span title={firstChunkAt}>{workStartLabel}</span>
+                    ) : (
+                        <span className="text-slate-400">—</span>
+                    )}
+                </div>
+
+                <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-600">Current status:</span>
+                    <StatPill
+                        label=""
+                        value={currentActivityLabel}
+                        tone={currentActivityTone}
+                        title={currentActivityLabel}
+                    />
                 </div>
             </div>
+
 
             {/* TODAY'S ACTIVITY (ring color: green when active >= idle, else red) */}
             <div className="rounded-2xl border border-slate-200 p-3">
