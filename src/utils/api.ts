@@ -46,10 +46,16 @@ export async function listDevices() {
 //   commandsSummary: { lastPending?, lastAck?, totals? },
 //   activityToday?: { activeSeconds: number; idleSeconds: number } | null
 // }>
-export async function getDevicesOptimized() {
-  const { data } = await api.get('/devices/list-optimized');
+export async function getDevicesOptimized(date?: string) {
+  const params: any = {};
+  if (date) {
+    params.date = date; // "YYYY-MM-DD"
+  }
+
+  const { data } = await api.get("/devices/list-optimized", { params });
   return Array.isArray(data?.data) ? data.data : [];
 }
+
 
 export async function assignDevice(
   deviceId: string,
@@ -207,61 +213,6 @@ export async function getCommandSummaries(deviceIds: string[]) {
   const { data } = await api.post('/commands/summary', { deviceIds });
   return data?.data?.map ?? {}; // returns { [deviceId]: { lastPending, lastAck, ... } }
 }
-
-// // --- Device Logs (chunks/list or logs/list) ---
-// export async function getDeviceLogs(params: {
-//   deviceId: string;
-//   from?: string; // YYYY-MM-DD
-//   to?: string;   // YYYY-MM-DD
-//   skip?: number;
-//   limit?: number;
-// }) {
-//   const { data } = await api.get('/logs/list', { params });
-//   const items = Array.isArray(data?.data) ? data.data : [];
-//   const meta = data?.meta ?? {
-//     total: items.length,
-//     skip: Number(params?.skip ?? 0),
-//     limit: Number(params?.limit ?? 50),
-//   };
-//   return { items, meta };
-// }
-
-// // --- Apps summary per device ---
-// export async function getDeviceApps(params: {
-//   deviceId: string;
-//   from?: string;
-//   to?: string;
-//   skip?: number;
-//   limit?: number;
-// }) {
-//   // If your backend route is /reports/apps/list use that; otherwise adjust.
-//   const { data } = await api.get('/reports/apps', { params });
-//   const items = Array.isArray(data?.data) ? data.data : [];
-//   const meta = data?.meta ?? {
-//     total: items.length,
-//     skip: Number(params?.skip ?? 0),
-//     limit: Number(params?.limit ?? 100),
-//   };
-//   return { items, meta };
-// }
-
-// // --- Titles summary per device ---
-// export async function getDeviceTitles(params: {
-//   deviceId: string;
-//   from?: string;
-//   to?: string;
-//   skip?: number;
-//   limit?: number;
-// }) {
-//   const { data } = await api.get('/reports/titles', { params });
-//   const items = Array.isArray(data?.data) ? data.data : [];
-//   const meta = data?.meta ?? {
-//     total: items.length,
-//     skip: Number(params?.skip ?? 0),
-//     limit: Number(params?.limit ?? 100),
-//   };
-//   return { items, meta };
-// }
 
 import type {
   LogsListResponse,
