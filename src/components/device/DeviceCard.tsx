@@ -249,6 +249,12 @@ export default function DeviceCard({
                     <div className="flex-1">
                         <div className="mt-0.5 space-y-1.5">
                             <div className="flex items-center justify-between text-[11px] text-slate-600">
+                                <span>Total</span>
+                                <span className="font-semibold">
+                                    {activity.total > 0 ? fmtHMS(activity.total) : "—"}
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] text-slate-600">
                                 <span>Active</span>
                                 <span className="font-semibold">
                                     {activity.total > 0 ? fmtHMS(activity.active) : "—"}

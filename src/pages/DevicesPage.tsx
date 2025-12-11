@@ -53,7 +53,12 @@ export default function DevicesPage() {
   const devicesQ = useQuery({
     queryKey: ["devices-optimized"],
     queryFn: getDevicesOptimized,
-    refetchInterval: refreshInterval,
+    // 🔁 Always use the latest config; default to 60s if config not loaded / failed
+    refetchInterval: () => {
+      const delaySec = configQ.data?.clientHeartbeatDelay ?? 60;
+      return delaySec * 1000;
+    },
+    refetchIntervalInBackground: true,
     refetchOnWindowFocus: false,
     staleTime: 15_000,
   });
