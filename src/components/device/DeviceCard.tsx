@@ -20,6 +20,7 @@ type CommandSummary = {
     totals?: { pending?: number; acknowledged?: number; completed?: number } | null;
 };
 
+
 function StatusDot({ online }: { online: boolean }) {
     return (
         <span
@@ -113,6 +114,26 @@ export default function DeviceCard({
     const [openApps, setOpenApps] = useState(false);
     const [openTitles, setOpenTitles] = useState(false);
 
+    const handleCopyDeviceId = async () => {
+        const id = device?.deviceId;
+        if (!id) return;
+
+        try {
+            await navigator.clipboard.writeText(id);
+            onToast({
+                tone: "success",
+                title: "Device ID copied",
+                desc: id,
+            });
+        } catch (err) {
+            onToast({
+                tone: "error",
+                title: "Failed to copy device ID",
+                desc: "Your browser may have blocked clipboard access.",
+            });
+        }
+    };
+
     const lastSeen =
         device.lastSeen ||
         device.lastClientHeartbeat ||
@@ -195,9 +216,17 @@ export default function DeviceCard({
                         <div className="text-xs text-slate-500 truncate max-w-[220px]">
                             {device.designation ?? "—"}
                         </div>
-                        <div className="text-[11px] text-slate-400 truncate max-w-[240px]">
-                            {device.deviceId}
+                        <div className="flex items-center gap-1 text-[11px] text-slate-400 max-w-[240px]">
+                            <button
+                                type="button"
+                                onClick={handleCopyDeviceId}
+                                className="truncate text-left hover:text-slate-700 hover:underline"
+                                title="Click to copy device ID"
+                            >
+                                {device.deviceId}
+                            </button>
                         </div>
+
                     </div>
                 </div>
 
