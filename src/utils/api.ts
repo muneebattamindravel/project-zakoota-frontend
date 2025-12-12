@@ -14,6 +14,31 @@ export function setAuthToken(token: string | null) {
   else delete api.defaults.headers.common['Authorization'];
 }
 
+// ---- Auth helpers ----
+export async function loginApi(username: string, password: string) {
+  const { data } = await api.post('/auth/login', { username, password });
+  return data as { token: string; user: { username: string; role?: string } };
+}
+
+// Auto-logout on 401
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401) {
+      // Clear local storage + auth header, then redirect to login
+      try {
+        localStorage.removeItem('mf_auth');
+      } catch { }
+      setAuthToken(null);
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
+
 export async function login(username: string, password: string) {
   const { data } = await api.post('/auth/login', { username, password });
   const user = data?.data?.user ?? data?.user ?? { username };
@@ -253,8 +278,8 @@ export async function getDeviceLogs(params: {
   const rawChunks: any[] = Array.isArray(data?.data?.chunks)
     ? data.data.chunks
     : Array.isArray(data?.data)
-    ? data.data
-    : [];
+      ? data.data
+      : [];
 
   const items: LogsListItem[] = rawChunks.map((c: any) => {
     const details: any[] = Array.isArray(c?.logDetails) ? c.logDetails : [];
@@ -286,17 +311,17 @@ export async function getDeviceLogs(params: {
     const top3Titles =
       byTitle.size > 0
         ? [...byTitle.entries()]
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 3)
-            .map(([title, sec]) => ({ title, activeSeconds: sec }))
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([title, sec]) => ({ title, activeSeconds: sec }))
         : [];
 
     const top3Apps =
       byApp.size > 0
         ? [...byApp.entries()]
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 3)
-            .map(([app, sec]) => ({ app, activeSeconds: sec }))
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([app, sec]) => ({ app, activeSeconds: sec }))
         : [];
 
     return {

@@ -1,60 +1,166 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import type { User } from '../utils/types';
-import { setAuthToken } from '../utils/api';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+import type { User } from '../types';
+import { loginApi, setAuthToken } from '../utils/api';
 
-type Ctx = {
+type AuthContextValue = {
   user: User | null;
-  setUser: (u: User | null) => void;
-  logout: () => void;
-  bootstrapped: boolean;
+  token: string | null;
   isAuthed: boolean;
+  bootstrapped: boolean;
+  login: (username: string, password: string) => Promise<void>;
+  logout: () => void;
+  // kept so old code calling setUser() doesn’t crash
+  setUser: (u: User | null) => void;
 };
 
-const C = createContext<Ctx | null>(null);
+const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, _setUser] = useState<User | null>(null);
-  const [boot, setBoot] = useState(false);
+const STORAGE_KEY = 'mf_auth';
 
-  useEffect(() => {
-    try {
-      const u = localStorage.getItem('zk_user');
-      const t = localStorage.getItem('zk_token');
+type StoredAuth = {
+  token: string;
+  user: User;
+  exp: number; // ms timestamp
+};
 
-      if (u) _setUser(JSON.parse(u));
-      if (t) setAuthToken(t);
-    } catch {
-      // ignore corrupted localStorage
-    } finally {
-      setBoot(true);
+function readStoredAuth(): StoredAuth | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredAuth;
+    if (!parsed.token || !parsed.user || !parsed.exp) return null;
+    if (parsed.exp < Date.now()) {
+      localStorage.removeItem(STORAGE_KEY);
+      return null;
     }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  const [user, _setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [expiry, setExpiry] = useState<number | null>(null);
+  const [bootstrapped, setBootstrapped] = useState(false);
+
+  // Restore auth from localStorage on mount
+  useEffect(() => {
+    const stored = readStoredAuth();
+    if (stored) {
+      _setUser(stored.user);
+      setToken(stored.token);
+      setExpiry(stored.exp);
+      setAuthToken(stored.token);
+    }
+    setBootstrapped(true);
   }, []);
+
+  // Auto-logout when expiry passes
+  useEffect(() => {
+    if (!expiry || !token) return;
+
+    const msLeft = expiry - Date.now();
+    if (msLeft <= 0) {
+      doLogout();
+      return;
+    }
+
+    const id = window.setTimeout(() => {
+      doLogout();
+    }, msLeft + 1000);
+
+    return () => window.clearTimeout(id);
+  }, [expiry, token]);
+
+  const persistAuth = (store: StoredAuth | null) => {
+    try {
+      if (!store) {
+        localStorage.removeItem(STORAGE_KEY);
+      } else {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const doLogout = () => {
+    _setUser(null);
+    setToken(null);
+    setExpiry(null);
+    setAuthToken(null);
+    persistAuth(null);
+  };
+
+  const login = async (username: string, password: string) => {
+    const res = await loginApi(username, password);
+
+    const authUser: User = {
+      username: res.user.username,
+      // simple mapping; adjust if your User type has more fields
+      id: (res.user as any).id ?? res.user.username,
+    };
+
+    // match your backend JWT_EXPIRES_IN=8h (adjust if needed)
+    const exp = Date.now() + 8 * 60 * 60 * 1000;
+
+    _setUser(authUser);
+    setToken(res.token);
+    setExpiry(exp);
+    setAuthToken(res.token);
+
+    persistAuth({
+      token: res.token,
+      user: authUser,
+      exp,
+    });
+  };
 
   const setUser = (u: User | null) => {
     _setUser(u);
-    if (u) localStorage.setItem('zk_user', JSON.stringify(u));
-    else localStorage.removeItem('zk_user');
+    const stored = readStoredAuth();
+    if (stored) {
+      persistAuth({
+        ...stored,
+        user: u || stored.user,
+      });
+    }
   };
 
-  const logout = () => {
-    localStorage.removeItem('zk_user');
-    localStorage.removeItem('zk_token');
-    setAuthToken(null);
-    _setUser(null);
-  };
+  const isAuthed = !!user && !!token;
 
-  const isAuthed = !!localStorage.getItem('zk_token') || !!user;
-
-  const v = useMemo(
-    () => ({ user, setUser, logout, bootstrapped: boot, isAuthed }),
-    [user, boot, isAuthed]
+  const value: AuthContextValue = useMemo(
+    () => ({
+      user,
+      token,
+      isAuthed,
+      bootstrapped,
+      login,
+      logout: doLogout,
+      setUser,
+    }),
+    [user, token, isAuthed, bootstrapped]
   );
 
-  return <C.Provider value={v}>{children}</C.Provider>;
-}
+  return (
+    <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  );
+};
 
-export function useAuth() {
-  const v = useContext(C);
-  if (!v) throw new Error('useAuth must be used in provider');
-  return v;
+export function useAuth(): AuthContextValue {
+  const ctx = useContext(AuthContext);
+  if (!ctx) {
+    throw new Error('useAuth must be used within AuthProvider');
+  }
+  return ctx;
 }
