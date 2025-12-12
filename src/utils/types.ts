@@ -4,6 +4,16 @@ export type User = {
   username: string;
 };
 
+export type DeviceActivityToday = {
+  activeSeconds?: number;
+  idleSeconds?: number;
+  // Future-friendly fields (optional – fine if backend doesn't send them yet)
+  firstChunkAt?: string | null;
+  lastChunkAt?: string | null;
+  lastActivityAt?: string | null;
+  activityState?: "active" | "idle" | "offline" | "unknown";
+};
+
 export type Device = {
   deviceId: string;
   name?: string;
@@ -27,6 +37,8 @@ export type Device = {
   lastServiceHeartbeat?: string;
 
   commandsSummary?: CommandsSummary;
+
+  activityToday?: DeviceActivityToday | null;
 };
 
 export type CommandRow = {
