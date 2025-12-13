@@ -5,8 +5,8 @@ import React, {
   useMemo,
   useState,
 } from 'react';
-import type { User } from '../types';
-import { loginApi, setAuthToken } from '../utils/api';
+import type { User } from '../utils/types';
+import { loginApi, logoutApi, setAuthToken } from '../utils/api';
 
 type AuthContextValue = {
   user: User | null;
@@ -15,7 +15,6 @@ type AuthContextValue = {
   bootstrapped: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
-  // kept so old code calling setUser() doesn’t crash
   setUser: (u: User | null) => void;
 };
 
@@ -28,6 +27,20 @@ type StoredAuth = {
   user: User;
   exp: number; // ms timestamp
 };
+
+// Tiny JWT decoder for exp
+function decodeExp(token: string): number | null {
+  try {
+    const [, payloadBase64] = token.split('.');
+    if (!payloadBase64) return null;
+    const payloadJson = atob(payloadBase64.replace(/-/g, '+').replace(/_/g, '/'));
+    const payload = JSON.parse(payloadJson) as { exp?: number };
+    if (!payload.exp) return null;
+    return payload.exp * 1000;
+  } catch {
+    return null;
+  }
+}
 
 function readStoredAuth(): StoredAuth | null {
   try {
@@ -53,7 +66,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [expiry, setExpiry] = useState<number | null>(null);
   const [bootstrapped, setBootstrapped] = useState(false);
 
-  // Restore auth from localStorage on mount
   useEffect(() => {
     const stored = readStoredAuth();
     if (stored) {
@@ -65,7 +77,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     setBootstrapped(true);
   }, []);
 
-  // Auto-logout when expiry passes
   useEffect(() => {
     if (!expiry || !token) return;
 
@@ -80,6 +91,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }, msLeft + 1000);
 
     return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expiry, token]);
 
   const persistAuth = (store: StoredAuth | null) => {
@@ -94,7 +106,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  const doLogout = () => {
+  const doLogout = async () => {
+    try {
+      await logoutApi();
+    } catch {
+      // ignore
+    }
     _setUser(null);
     setToken(null);
     setExpiry(null);
@@ -106,13 +123,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     const res = await loginApi(username, password);
 
     const authUser: User = {
+      id: res.user.id,
       username: res.user.username,
-      // simple mapping; adjust if your User type has more fields
-      id: (res.user as any).id ?? res.user.username,
+      role: (res.user as any).role,
     };
 
-    // match your backend JWT_EXPIRES_IN=8h (adjust if needed)
-    const exp = Date.now() + 8 * 60 * 60 * 1000;
+    const exp = decodeExp(res.token) ?? Date.now() + 60 * 60 * 1000; // fallback 1h
 
     _setUser(authUser);
     setToken(res.token);

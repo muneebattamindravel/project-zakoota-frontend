@@ -2,6 +2,7 @@ export type User = {
   id?: string;
   _id?: string;
   username: string;
+  role: string;
 };
 
 export type DeviceActivityToday = {

@@ -14,11 +14,26 @@ export function setAuthToken(token: string | null) {
   else delete api.defaults.headers.common['Authorization'];
 }
 
-// ---- Auth helpers ----
+// --- Auth helpers ---
+
 export async function loginApi(username: string, password: string) {
   const { data } = await api.post('/auth/login', { username, password });
-  return data as { token: string; user: { username: string; role?: string } };
+  // Backend returns: { token, user: { id, username, role } }
+  return data as {
+    token: string;
+    user: { id: string; username: string; role?: string };
+  };
 }
+
+export async function logoutApi() {
+  // Best-effort logout; ignore errors (e.g., token already expired)
+  try {
+    await api.post('/auth/logout');
+  } catch {
+    // no-op
+  }
+}
+
 
 // Auto-logout on 401
 api.interceptors.response.use(
