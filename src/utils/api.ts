@@ -1,5 +1,15 @@
 import axios from 'axios';
 
+import type {
+  LogsListResponse,
+  AppsListResponse,
+  TitlesListResponse,
+  LogsListItem,
+  AppsListItem,
+  TitlesListItem,
+  ListMeta,
+} from './types';
+
 const baseURL = import.meta.env.VITE_API_BASE || 'http://localhost:6666/zakoota-api';
 const withCreds = (import.meta.env.VITE_WITH_CREDENTIALS || 'false') === 'true';
 
@@ -22,7 +32,7 @@ api.interceptors.response.use(
       // Clear local storage + auth header, then redirect to login
       try {
         localStorage.removeItem('mf_auth');
-      } catch { }
+      } catch {}
       setAuthToken(null);
       if (window.location.pathname !== '/login') {
         window.location.href = '/login';
@@ -31,7 +41,6 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
-
 
 export async function login(username: string, password: string) {
   const { data } = await api.post('/auth/login', { username, password });
@@ -48,7 +57,7 @@ export async function loginApi(username: string, password: string) {
 /**
  * Logout current user (best-effort).
  * Backend is mostly stateless for JWT, but this lets the server
- * clean up anything it wants, and the caller will clear local state.
+ * clean up anything it wants, and the caller will clear client state.
  */
 export async function logoutApi(): Promise<void> {
   try {
@@ -57,7 +66,6 @@ export async function logoutApi(): Promise<void> {
     // Ignore network / 5xx errors – we still clear client state in the UI.
   }
 }
-
 
 export async function getMe() {
   try {
@@ -90,10 +98,9 @@ export async function getDevicesOptimized(date?: string) {
     params.date = date; // "YYYY-MM-DD"
   }
 
-  const { data } = await api.get("/devices/list-optimized", { params });
+  const { data } = await api.get('/devices/list-optimized', { params });
   return Array.isArray(data?.data) ? data.data : [];
 }
-
 
 export async function assignDevice(
   deviceId: string,
@@ -115,7 +122,13 @@ export async function deleteAllDevices() {
   return data;
 }
 
-export type LogsQuery = { deviceId: string; from?: string; to?: string; limit?: number; skip?: number };
+export type LogsQuery = {
+  deviceId: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  skip?: number;
+};
 
 export async function listLogs(q: LogsQuery) {
   const { data } = await api.get('/logs', { params: q });
@@ -129,34 +142,57 @@ export async function listLogs(q: LogsQuery) {
 }
 
 export async function logsSummary(deviceId: string, from?: string, to?: string) {
-  const { data } = await api.get('/logs/aggregate/summary', { params: { deviceId, from, to } });
+  const { data } = await api.get('/logs/aggregate/summary', {
+    params: { deviceId, from, to },
+  });
   return data?.data?.summary ?? data?.summary ?? data?.data ?? data ?? {};
 }
 
-export async function logsApps(deviceId: string, from?: string, to?: string, top: number = 20) {
-  const { data } = await api.get('/logs/aggregate/apps', { params: { deviceId, from, to, top } });
+export async function logsApps(
+  deviceId: string,
+  from?: string,
+  to?: string,
+  top: number = 20
+) {
+  const { data } = await api.get('/logs/aggregate/apps', {
+    params: { deviceId, from, to, top },
+  });
   const arr = data?.data?.apps ?? data?.apps ?? data?.data ?? data ?? [];
-  return arr.map((r: { appName?: string; _id?: string; activeTime?: number; idleTime?: number }) => ({
-    appName: r.appName ?? r._id ?? 'Unknown',
-    activeTime: r.activeTime ?? 0,
-    idleTime: r.idleTime ?? 0,
-  }));
+  return arr.map(
+    (r: { appName?: string; _id?: string; activeTime?: number; idleTime?: number }) => ({
+      appName: r.appName ?? r._id ?? 'Unknown',
+      activeTime: r.activeTime ?? 0,
+      idleTime: r.idleTime ?? 0,
+    })
+  );
 }
 
-export async function logsTitles(deviceId: string, appName: string, from?: string, to?: string, top: number = 20) {
-  const { data } = await api.get('/logs/aggregate/titles', { params: { deviceId, appName, from, to, top } });
+export async function logsTitles(
+  deviceId: string,
+  appName: string,
+  from?: string,
+  to?: string,
+  top: number = 20
+) {
+  const { data } = await api.get('/logs/aggregate/titles', {
+    params: { deviceId, appName, from, to, top },
+  });
   const arr = data?.data?.titles ?? data?.titles ?? data?.data ?? data ?? [];
-  return arr.map((r: { title?: string; _id?: string; activeTime?: number; idleTime?: number }) => ({
-    title: r.title ?? r._id ?? 'Unknown',
-    activeTime: r.activeTime ?? 0,
-    idleTime: r.idleTime ?? 0,
-  }));
+  return arr.map(
+    (r: { title?: string; _id?: string; activeTime?: number; idleTime?: number }) => ({
+      title: r.title ?? r._id ?? 'Unknown',
+      activeTime: r.activeTime ?? 0,
+      idleTime: r.idleTime ?? 0,
+    })
+  );
 }
 
 export async function logsMissing(deviceId: string, from?: string, to?: string) {
   const { data } = await api.get('/logs/missing', { params: { deviceId, from, to } });
   return data?.data?.have ?? data?.have ?? [];
 }
+
+// Config
 
 export type ConfigPayload = {
   chunkTime?: number;
@@ -187,26 +223,6 @@ export async function createCommand(body: {
   return data?.data ?? data;
 }
 
-// broadcast to all devices
-export async function broadcastCommand(body: {
-  target: 'client' | 'service';
-  type: string;
-  payload?: any;
-}) {
-  const { data } = await api.post('/commands/broadcast', body);
-  return data?.data ?? data;
-}
-
-export async function completeCommand(commandId: string) {
-  const { data } = await api.patch(`/commands/${commandId}/complete`);
-  return data?.data ?? data;
-}
-
-export async function acknowledgeCommand(commandId: string) {
-  const { data } = await api.patch('/commands/acknowledge', { commandId });
-  return data?.data ?? data;
-}
-
 export async function getPendingCommands(deviceId: string) {
   const { data } = await api.get(`/commands/pending/${deviceId}`);
   return data?.data ?? data;
@@ -220,7 +236,10 @@ export async function listErrors(params?: {
 }) {
   const { data } = await api.get('/errors/list', { params });
   const items = data?.data ?? data?.items ?? [];
-  const meta = data?.meta ?? { page: 1, total: Array.isArray(items) ? items.length : 0 };
+  const meta = data?.meta ?? {
+    page: 1,
+    total: Array.isArray(items) ? items.length : 0,
+  };
   return { items: Array.isArray(items) ? items : [], meta };
 }
 
@@ -233,10 +252,9 @@ export async function listCommands(params?: {
   to?: string | number | Date;
   skip?: number;
   limit?: number;
-  sort?: 'asc' | 'desc';
 }) {
   const { data } = await api.get('/commands/list', { params });
-  // Backend responds with { ok, data: [], meta } 
+  // Backend responds with { ok, data: [], meta }
   const items = data?.data ?? [];
   const meta = data?.meta ?? {
     total: Array.isArray(items) ? items.length : 0,
@@ -252,30 +270,27 @@ export async function getCommandSummaries(deviceIds: string[]) {
   return data?.data?.map ?? {}; // returns { [deviceId]: { lastPending, lastAck, ... } }
 }
 
-import type {
-  LogsListResponse,
-  AppsListResponse,
-  TitlesListResponse,
-  LogsListItem,
-  AppsListItem,
-  TitlesListItem,
-  ListMeta,
-} from "./types";
-
 // --- Add below your other API helpers ---
 
 export async function getDeviceLogs(params: {
   deviceId: string;
   from?: string; // ISO
-  to?: string;   // ISO
+  to?: string; // ISO
   skip?: number;
   limit?: number;
 }): Promise<LogsListResponse> {
   if (!params?.deviceId) {
-    return { items: [], meta: { total: 0, limit: Number(params?.limit ?? 50), skip: Number(params?.skip ?? 0) } };
+    return {
+      items: [],
+      meta: {
+        total: 0,
+        limit: Number(params?.limit ?? 50),
+        skip: Number(params?.skip ?? 0),
+      },
+    };
   }
 
-  const { data } = await api.get("/logs", {
+  const { data } = await api.get('/logs', {
     params: {
       deviceId: params.deviceId,
       from: params.from,
@@ -285,14 +300,14 @@ export async function getDeviceLogs(params: {
     },
   });
 
-  // Accept both shapes:
-  //  A) { ok, data: { chunks: [...] }, meta }
-  //  B) { ok, data: [...] , meta }
+  // Normalize payload
   const rawChunks: any[] = Array.isArray(data?.data?.chunks)
     ? data.data.chunks
+    : Array.isArray(data?.chunks)
+    ? data.chunks
     : Array.isArray(data?.data)
-      ? data.data
-      : [];
+    ? data.data
+    : [];
 
   const items: LogsListItem[] = rawChunks.map((c: any) => {
     const details: any[] = Array.isArray(c?.logDetails) ? c.logDetails : [];
@@ -308,8 +323,8 @@ export async function getDeviceLogs(params: {
 
     for (const d of details) {
       const active = Number(d?.activeTime || 0);
-      const title = (d?.title || "").trim();
-      const app = (d?.appName || d?.processName || "").trim();
+      const title = (d?.title || '').trim();
+      const app = (d?.appName || d?.processName || '').trim();
 
       if (active > bestActive) {
         bestActive = active;
@@ -324,17 +339,17 @@ export async function getDeviceLogs(params: {
     const top3Titles =
       byTitle.size > 0
         ? [...byTitle.entries()]
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 3)
-          .map(([title, sec]) => ({ title, activeSeconds: sec }))
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([title, sec]) => ({ title, activeSeconds: sec }))
         : [];
 
     const top3Apps =
       byApp.size > 0
         ? [...byApp.entries()]
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 3)
-          .map(([app, sec]) => ({ app, activeSeconds: sec }))
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([app, sec]) => ({ app, activeSeconds: sec }))
         : [];
 
     return {
@@ -343,8 +358,12 @@ export async function getDeviceLogs(params: {
       endAt: c?.endAt || c?.endedAt || c?.updatedAt,
       createdAt: c?.createdAt,
       updatedAt: c?.updatedAt,
-      activeSeconds: Number(c?.logTotals?.activeTime ?? c?.activeSeconds ?? c?.active ?? 0),
-      idleSeconds: Number(c?.logTotals?.idleTime ?? c?.idleSeconds ?? c?.idle ?? 0),
+      activeSeconds: Number(
+        c?.logTotals?.activeTime ?? c?.activeSeconds ?? c?.active ?? 0
+      ),
+      idleSeconds: Number(
+        c?.logTotals?.idleTime ?? c?.idleSeconds ?? c?.idle ?? 0
+      ),
       topApp: bestApp,
       topTitle: bestTitle,
       top3Titles,
@@ -362,7 +381,6 @@ export async function getDeviceLogs(params: {
   return { items, meta };
 }
 
-
 export async function getDeviceApps(params: {
   deviceId: string;
   from?: string;
@@ -371,13 +389,14 @@ export async function getDeviceApps(params: {
   limit?: number;
 }): Promise<AppsListResponse> {
   // If your route is '/reports/apps/list', change it here.
-  const { data } = await api.get("/reports/apps", { params });
+  const { data } = await api.get('/reports/apps', { params });
   const items: AppsListItem[] = Array.isArray(data?.data) ? data.data : [];
-  const meta: ListMeta = data?.meta ?? {
-    total: items.length,
-    skip: Number(params?.skip ?? 0),
-    limit: Number(params?.limit ?? 100),
-  };
+  const meta: ListMeta =
+    data?.meta ?? {
+      total: items.length,
+      skip: Number(params?.skip ?? 0),
+      limit: Number(params?.limit ?? 100),
+    };
   return { items, meta };
 }
 
@@ -388,13 +407,13 @@ export async function getDeviceTitles(params: {
   skip?: number;
   limit?: number;
 }): Promise<TitlesListResponse> {
-  const { data } = await api.get("/reports/titles", { params });
+  const { data } = await api.get('/reports/titles', { params });
   const items: TitlesListItem[] = Array.isArray(data?.data) ? data.data : [];
-  const meta: ListMeta = data?.meta ?? {
-    total: items.length,
-    skip: Number(params?.skip ?? 0),
-    limit: Number(params?.limit ?? 100),
-  };
+  const meta: ListMeta =
+    data?.meta ?? {
+      total: items.length,
+      skip: Number(params?.skip ?? 0),
+      limit: Number(params?.limit ?? 100),
+    };
   return { items, meta };
 }
-

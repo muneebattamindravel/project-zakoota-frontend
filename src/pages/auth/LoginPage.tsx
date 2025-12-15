@@ -33,8 +33,25 @@ export default function LoginPage() {
     e.preventDefault();
     setErrorMsg(null);
     setLoading(true);
+
     try {
-      await login(username.trim(), password);
+      const res = await login(username.trim(), password);
+
+      // If your login() follows the { ok, error } contract
+      if (!res.ok) {
+        const msg =
+          res.error || "Login failed. Please check your credentials.";
+
+        setErrorMsg(msg);
+
+        push({
+          tone: "error",
+          title: "Login failed",
+          desc: msg,
+        });
+
+        return;
+      }
 
       // ✅ Show success toast
       push({
@@ -54,7 +71,6 @@ export default function LoginPage() {
 
       setErrorMsg(msg);
 
-      // Error toast as well
       push({
         tone: "error",
         title: "Login failed",
@@ -148,9 +164,8 @@ export default function LoginPage() {
 
           <div className="pt-1 border-t border-slate-800/70 mt-2">
             <p className="text-[10px] text-slate-500 text-center">
-              Admin credentials come from backend environment variables:{" "}
-              <span className="font-mono">DASHBOARD_ADMIN_USER</span> and{" "}
-              <span className="font-mono">DASHBOARD_ADMIN_PASSWORD</span>.
+              Dashboard access is managed by your backend admin.{" "}
+              If you don&apos;t have credentials yet, please contact the system administrator.
             </p>
           </div>
         </div>

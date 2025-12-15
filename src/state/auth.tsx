@@ -1,182 +1,156 @@
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
-  useMemo,
   useState,
+  ReactNode,
 } from 'react';
-import type { User } from '../utils/types';
 import { loginApi, logoutApi, setAuthToken } from '../utils/api';
 
-type AuthContextValue = {
+type User = {
+  id?: string;
+  username: string;
+  role?: string;
+};
+
+type AuthState = {
+  bootstrapped: boolean;
+  isAuthed: boolean;
   user: User | null;
   token: string | null;
-  isAuthed: boolean;
-  bootstrapped: boolean;
-  login: (username: string, password: string) => Promise<void>;
-  logout: () => void;
-  setUser: (u: User | null) => void;
 };
+
+type AuthContextValue = AuthState & {
+  login: (username: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  logout: () => Promise<void>;
+};
+
+const AUTH_STORAGE_KEY = 'mf_auth';
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-const STORAGE_KEY = 'mf_auth';
-
-type StoredAuth = {
-  token: string;
-  user: User;
-  exp: number; // ms timestamp
-};
-
-// Tiny JWT decoder for exp
-function decodeExp(token: string): number | null {
+function loadStoredAuth(): { token: string; user: User } | null {
   try {
-    const [, payloadBase64] = token.split('.');
-    if (!payloadBase64) return null;
-    const payloadJson = atob(payloadBase64.replace(/-/g, '+').replace(/_/g, '/'));
-    const payload = JSON.parse(payloadJson) as { exp?: number };
-    if (!payload.exp) return null;
-    return payload.exp * 1000;
-  } catch {
-    return null;
-  }
-}
-
-function readStoredAuth(): StoredAuth | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as StoredAuth;
-    if (!parsed.token || !parsed.user || !parsed.exp) return null;
-    if (parsed.exp < Date.now()) {
-      localStorage.removeItem(STORAGE_KEY);
-      return null;
-    }
-    return parsed;
+    return JSON.parse(raw);
   } catch {
     return null;
   }
 }
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => {
-  const [user, _setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [expiry, setExpiry] = useState<number | null>(null);
-  const [bootstrapped, setBootstrapped] = useState(false);
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const [state, setState] = useState<AuthState>({
+    bootstrapped: false,
+    isAuthed: false,
+    user: null,
+    token: null,
+  });
 
+  // Bootstrap from localStorage
   useEffect(() => {
-    const stored = readStoredAuth();
-    if (stored) {
-      _setUser(stored.user);
-      setToken(stored.token);
-      setExpiry(stored.exp);
+    const stored = loadStoredAuth();
+    if (stored?.token) {
       setAuthToken(stored.token);
+      setState({
+        bootstrapped: true,
+        isAuthed: true,
+        user: stored.user,
+        token: stored.token,
+      });
+    } else {
+      setState((prev) => ({ ...prev, bootstrapped: true }));
     }
-    setBootstrapped(true);
   }, []);
 
-  useEffect(() => {
-    if (!expiry || !token) return;
+  const login = useCallback<AuthContextValue['login']>(
+    async (username, password) => {
+      try {
+        const res = await loginApi(username, password);
+        if (!res?.token) {
+          setState({
+            bootstrapped: true,
+            isAuthed: false,
+            user: null,
+            token: null,
+          });
+          return { ok: false, error: 'Invalid login response' };
+        }
 
-    const msLeft = expiry - Date.now();
-    if (msLeft <= 0) {
-      doLogout();
-      return;
-    }
+        const user: User = res.user ?? { username };
+        const token = res.token;
 
-    const id = window.setTimeout(() => {
-      doLogout();
-    }, msLeft + 1000);
+        setAuthToken(token);
+        try {
+          localStorage.setItem(
+            AUTH_STORAGE_KEY,
+            JSON.stringify({ token, user })
+          );
+        } catch {
+          // ignore storage errors
+        }
 
-    return () => window.clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expiry, token]);
+        setState({
+          bootstrapped: true,
+          isAuthed: true,
+          user,
+          token,
+        });
 
-  const persistAuth = (store: StoredAuth | null) => {
-    try {
-      if (!store) {
-        localStorage.removeItem(STORAGE_KEY);
-      } else {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+        return { ok: true };
+      } catch (err: any) {
+        const message =
+          err?.response?.data?.error ||
+          err?.message ||
+          'Login failed';
+        setState({
+          bootstrapped: true,
+          isAuthed: false,
+          user: null,
+          token: null,
+        });
+        return { ok: false, error: message };
       }
-    } catch {
-      // ignore
-    }
-  };
+    },
+    []
+  );
 
-  const doLogout = async () => {
+  const logout = useCallback<AuthContextValue['logout']>(async () => {
     try {
       await logoutApi();
     } catch {
       // ignore
     }
-    _setUser(null);
-    setToken(null);
-    setExpiry(null);
+
     setAuthToken(null);
-    persistAuth(null);
-  };
-
-  const login = async (username: string, password: string) => {
-    const res = await loginApi(username, password);
-
-    const authUser: User = {
-      id: res.user.id,
-      username: res.user.username,
-      role: (res.user as any).role,
-    };
-
-    const exp = decodeExp(res.token) ?? Date.now() + 60 * 60 * 1000; // fallback 1h
-
-    _setUser(authUser);
-    setToken(res.token);
-    setExpiry(exp);
-    setAuthToken(res.token);
-
-    persistAuth({
-      token: res.token,
-      user: authUser,
-      exp,
-    });
-  };
-
-  const setUser = (u: User | null) => {
-    _setUser(u);
-    const stored = readStoredAuth();
-    if (stored) {
-      persistAuth({
-        ...stored,
-        user: u || stored.user,
-      });
+    try {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+    } catch {
+      // ignore
     }
+
+    setState({
+      bootstrapped: true,
+      isAuthed: false,
+      user: null,
+      token: null,
+    });
+  }, []);
+
+  const value: AuthContextValue = {
+    ...state,
+    login,
+    logout,
   };
 
-  const isAuthed = !!user && !!token;
-
-  const value: AuthContextValue = useMemo(
-    () => ({
-      user,
-      token,
-      isAuthed,
-      bootstrapped,
-      login,
-      logout: doLogout,
-      setUser,
-    }),
-    [user, token, isAuthed, bootstrapped]
-  );
-
-  return (
-    <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) {
-    throw new Error('useAuth must be used within AuthProvider');;
+    throw new Error('useAuth must be used within an AuthProvider');
   }
   return ctx;
 }
