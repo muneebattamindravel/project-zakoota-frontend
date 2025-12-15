@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "../../state/auth";
+import { useAuth } from '../../state/auth';
 import { Toasts, useToasts } from "../../components/ui";
 
 export default function LoginPage() {

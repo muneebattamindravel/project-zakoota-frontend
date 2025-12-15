@@ -252,9 +252,9 @@ export async function listCommands(params?: {
   to?: string | number | Date;
   skip?: number;
   limit?: number;
+  sort?: string; // 👈 add this
 }) {
   const { data } = await api.get('/commands/list', { params });
-  // Backend responds with { ok, data: [], meta }
   const items = data?.data ?? [];
   const meta = data?.meta ?? {
     total: Array.isArray(items) ? items.length : 0,
