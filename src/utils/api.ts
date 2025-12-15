@@ -14,27 +14,6 @@ export function setAuthToken(token: string | null) {
   else delete api.defaults.headers.common['Authorization'];
 }
 
-// --- Auth helpers ---
-
-export async function loginApi(username: string, password: string) {
-  const { data } = await api.post('/auth/login', { username, password });
-  // Backend returns: { token, user: { id, username, role } }
-  return data as {
-    token: string;
-    user: { id: string; username: string; role?: string };
-  };
-}
-
-export async function logoutApi() {
-  // Best-effort logout; ignore errors (e.g., token already expired)
-  try {
-    await api.post('/auth/logout');
-  } catch {
-    // no-op
-  }
-}
-
-
 // Auto-logout on 401
 api.interceptors.response.use(
   (response) => response,
@@ -60,6 +39,25 @@ export async function login(username: string, password: string) {
   const token = data?.data?.token ?? data?.token ?? null;
   return { ok: data?.ok ?? true, user, token, raw: data };
 }
+
+export async function loginApi(username: string, password: string) {
+  // Simple alias so the rest of the app can use `loginApi`
+  return login(username, password);
+}
+
+/**
+ * Logout current user (best-effort).
+ * Backend is mostly stateless for JWT, but this lets the server
+ * clean up anything it wants, and the caller will clear local state.
+ */
+export async function logoutApi(): Promise<void> {
+  try {
+    await api.post('/auth/logout');
+  } catch (err) {
+    // Ignore network / 5xx errors – we still clear client state in the UI.
+  }
+}
+
 
 export async function getMe() {
   try {
