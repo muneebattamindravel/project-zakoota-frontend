@@ -4,6 +4,7 @@ import {
   getDevicesOptimized,
   deleteAllDevices,
   getUserConfig,
+  getMatrixUsers,
 } from "../utils/api";
 import type { Device } from "../utils/types";
 import { Toasts, useToasts, Spinner, Modal } from "../components/ui";
@@ -100,7 +101,30 @@ export default function DevicesPage() {
     staleTime: 15_000,
   });
 
-  const devices: Device[] = Array.isArray(devicesQ.data) ? devicesQ.data : [];
+  // Matrix users — fetched once, cached 5 min
+  const matrixQ = useQuery({
+    queryKey: ["matrix-users"],
+    queryFn: getMatrixUsers,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const matrixUserMap = useMemo(() => {
+    const map: Record<string, any> = {};
+    for (const u of (matrixQ.data ?? [])) map[u.userId] = u;
+    return map;
+  }, [matrixQ.data]);
+
+  const rawDevices: Device[] = Array.isArray(devicesQ.data) ? devicesQ.data : [];
+
+  // Enrich each device with its linked Matrix user
+  const devices = useMemo(() =>
+    rawDevices.map((d: any) => ({
+      ...d,
+      matrixUser: d.userId ? (matrixUserMap[d.userId] ?? null) : null,
+    })),
+    [rawDevices, matrixUserMap]
+  );
 
   // Manual refresh
   const refetchDevices = async () => {
@@ -125,12 +149,15 @@ export default function DevicesPage() {
     const result = devices.filter((d) => {
       const stats = getActivityStats(d);
 
-      // Search filter
+      // Search filter (also matches linked Matrix user)
+      const mx = (d as any).matrixUser;
       const matchesSearch =
         !q ||
         d.deviceId?.toLowerCase().includes(q) ||
         d.username?.toLowerCase().includes(q) ||
-        d.name?.toLowerCase().includes(q);
+        d.name?.toLowerCase().includes(q) ||
+        mx?.name?.toLowerCase().includes(q) ||
+        mx?.username?.toLowerCase().includes(q);
 
       // Status filter
       const matchesStatus =

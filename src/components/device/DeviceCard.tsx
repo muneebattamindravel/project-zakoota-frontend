@@ -151,6 +151,11 @@ export default function DeviceCard({
     }
   };
 
+  const matrixUser = device.matrixUser ?? null;
+  const displayName = matrixUser?.name ?? device.name ?? device.username ?? "Unassigned";
+  const displayDesignation = matrixUser?.designation ?? device.designation ?? null;
+  const displayRoles: string[] = matrixUser?.roles ?? [];
+
   const lastSeen =
     device.lastSeen ||
     device.lastClientHeartbeat ||
@@ -220,9 +225,7 @@ export default function DeviceCard({
               />
             ) : (
               <div className="h-12 w-12 rounded-full bg-indigo-500 text-white flex items-center justify-center font-semibold">
-                {(device.name ?? device.username ?? "U")
-                  .slice(0, 1)
-                  .toUpperCase()}
+                {displayName.slice(0, 1).toUpperCase()}
               </div>
             )}
             <div className="absolute -bottom-0 -right-0">
@@ -232,12 +235,24 @@ export default function DeviceCard({
 
           <div className="min-w-0">
             <div className="font-semibold text-slate-900 truncate max-w-[180px]">
-              {device.name ?? device.username ?? "Unassigned"}
+              {displayName}
             </div>
             <div className="text-xs text-slate-500 truncate max-w-[220px]">
-              {device.designation ?? "—"}
+              {displayDesignation ?? "—"}
             </div>
-            <div className="flex items-center gap-1 text-[11px] text-slate-400 max-w-[240px]">
+            {displayRoles.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-0.5">
+                {displayRoles.map((role) => (
+                  <span
+                    key={role}
+                    className="text-[10px] font-medium bg-violet-50 text-violet-700 border border-violet-200 rounded px-1.5 py-0.5"
+                  >
+                    {role}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-1 text-[11px] text-slate-400 max-w-[240px] mt-0.5">
               <button
                 type="button"
                 onClick={handleCopyDeviceId}

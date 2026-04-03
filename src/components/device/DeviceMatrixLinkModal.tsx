@@ -45,7 +45,7 @@ export default function DeviceMatrixLinkModal({
     );
   });
 
-  const currentlyLinked = users.find((u: any) => u.userId === device.userId);
+  const currentlyLinked = device.matrixUser ?? users.find((u: any) => u.userId === device.userId);
 
   return (
     <Modal
