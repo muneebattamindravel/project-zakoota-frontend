@@ -410,6 +410,11 @@ export async function linkDeviceToMatrixUser(deviceId: string, matrixUserId: str
   return data;
 }
 
+export async function unlinkDeviceFromMatrix(deviceId: string) {
+  const { data } = await api.post('/matrix/unlink-device', { deviceId });
+  return data;
+}
+
 export async function getDeviceTitles(params: {
   deviceId: string;
   from?: string;

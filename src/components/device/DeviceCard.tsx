@@ -3,7 +3,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   RefreshCw,
   Send,
-  User,
   AppWindow,
   Grid2x2,
   ListChecks,
@@ -11,7 +10,6 @@ import {
   Link2,
 } from "lucide-react";
 import { fmtHMS, fmtLocal, fmtAgo } from "../../utils/format";
-import DeviceAssignModal from "./DeviceAssignModal";
 import DeviceMatrixLinkModal from "./DeviceMatrixLinkModal";
 import DeviceCommandModal from "./DeviceCommandModal";
 import DeviceHistoryModal from "./DeviceHistoryModal";
@@ -114,16 +112,17 @@ export default function DeviceCard({
   refetchDevices,
   summary,
   summariesLoading,
+  takenMatrixUserIds,
 }: {
   device: any;
   onToast: (t: { tone: "success" | "error"; title: string; desc?: string }) => void;
   refetchDevices: () => void;
   summary?: CommandSummary;
   summariesLoading?: boolean;
+  takenMatrixUserIds?: Set<string>;
 }) {
   const qc = useQueryClient();
 
-  const [openAssign, setOpenAssign] = useState(false);
   const [openCmd, setOpenCmd] = useState(false);
   const [openHistory, setOpenHistory] = useState(false);
   const [openLogs, setOpenLogs] = useState(false);
@@ -444,13 +443,6 @@ export default function DeviceCard({
       {/* OTHER ACTIONS */}
       <div className="flex items-center gap-2">
         <button
-          onClick={() => setOpenAssign(true)}
-          className="p-2 rounded-lg hover:bg-slate-100 text-slate-700"
-          title="Assign"
-        >
-          <User className="h-4 w-4" />
-        </button>
-        <button
           onClick={() => setOpenMatrixLink(true)}
           className={`p-2 rounded-lg hover:bg-indigo-100 ${device.userId ? "text-indigo-600" : "text-slate-400 hover:text-indigo-600"}`}
           title="Link to Matrix user"
@@ -484,12 +476,6 @@ export default function DeviceCard({
       </div>
 
       {/* MODALS */}
-      <DeviceAssignModal
-        open={openAssign}
-        onClose={() => setOpenAssign(false)}
-        device={device}
-        onToast={onToast}
-      />
       <DeviceCommandModal
         open={openCmd}
         onClose={() => setOpenCmd(false)}
@@ -521,6 +507,7 @@ export default function DeviceCard({
         onClose={() => setOpenMatrixLink(false)}
         device={device}
         onToast={onToast}
+        takenMatrixUserIds={takenMatrixUserIds}
       />
     </div>
   );

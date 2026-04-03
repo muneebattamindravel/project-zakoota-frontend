@@ -126,6 +126,15 @@ export default function DevicesPage() {
     [rawDevices, matrixUserMap]
   );
 
+  // Set of Matrix userIds already linked to any device
+  const takenMatrixUserIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const d of rawDevices) {
+      if ((d as any).userId) s.add((d as any).userId);
+    }
+    return s;
+  }, [rawDevices]);
+
   // Manual refresh
   const refetchDevices = async () => {
     await qc.invalidateQueries({ queryKey: ["devices-optimized", selectedDate] });
@@ -449,6 +458,7 @@ export default function DevicesPage() {
               refetchDevices={refetchDevices}
               summary={d.commandsSummary}
               summariesLoading={devicesQ.isFetching}
+              takenMatrixUserIds={takenMatrixUserIds}
             />
           ))}
         </div>

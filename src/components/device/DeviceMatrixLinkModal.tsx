@@ -2,14 +2,15 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Modal } from "../ui";
 import LoadingButton from "../ui/LoadingButton";
-import { getMatrixUsers, linkDeviceToMatrixUser } from "../../utils/api";
-import { Search, Link2, CheckCircle2 } from "lucide-react";
+import { getMatrixUsers, linkDeviceToMatrixUser, unlinkDeviceFromMatrix } from "../../utils/api";
+import { Search, Link2, CheckCircle2, Unlink } from "lucide-react";
 
 export default function DeviceMatrixLinkModal({
   open,
   onClose,
   device,
   onToast,
+  takenMatrixUserIds,
 }: any) {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
@@ -24,15 +25,33 @@ export default function DeviceMatrixLinkModal({
     staleTime: 60_000,
   });
 
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["devices-optimized"] });
+    qc.invalidateQueries({ queryKey: ["matrix-users"] });
+  };
+
   const linkM = useMutation({
     mutationFn: () => linkDeviceToMatrixUser(device.deviceId, selectedUserId!),
     onSuccess: () => {
       onToast({ tone: "success", title: "Device linked to Matrix user" });
       onClose();
-      qc.invalidateQueries({ queryKey: ["devices"] });
+      invalidate();
+    },
+    onError: (e: any) => {
+      const msg = e?.response?.data?.error ?? e?.message;
+      onToast({ tone: "error", title: "Link failed", desc: msg });
+    },
+  });
+
+  const unlinkM = useMutation({
+    mutationFn: () => unlinkDeviceFromMatrix(device.deviceId),
+    onSuccess: () => {
+      onToast({ tone: "success", title: "Device unlinked from Matrix" });
+      onClose();
+      invalidate();
     },
     onError: (e: any) =>
-      onToast({ tone: "error", title: "Link failed", desc: e?.message }),
+      onToast({ tone: "error", title: "Unlink failed", desc: e?.message }),
   });
 
   const filtered = users.filter((u: any) => {
@@ -51,17 +70,28 @@ export default function DeviceMatrixLinkModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`Link to Matrix User: ${device.deviceId}`}
+      title={`Matrix Link: ${device.deviceId}`}
       widthClass="w-[520px]"
     >
       {currentlyLinked && (
-        <div className="mb-3 flex items-center gap-2 rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-2 text-sm text-indigo-700">
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
-          <span>
-            Currently linked to{" "}
-            <span className="font-semibold">{currentlyLinked.name}</span>{" "}
-            <span className="text-indigo-400">({currentlyLinked.username})</span>
-          </span>
+        <div className="mb-3 flex items-center justify-between gap-2 rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-2">
+          <div className="flex items-center gap-2 text-sm text-indigo-700">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <span>
+              Linked to{" "}
+              <span className="font-semibold">{currentlyLinked.name}</span>{" "}
+              <span className="text-indigo-400">({currentlyLinked.username})</span>
+            </span>
+          </div>
+          <LoadingButton
+            className="shrink-0 text-[11px] bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 flex items-center gap-1 px-2 py-1"
+            pending={unlinkM.isPending}
+            pendingText="Unlinking…"
+            onClick={() => unlinkM.mutate()}
+          >
+            <Unlink className="h-3 w-3" />
+            Unlink
+          </LoadingButton>
         </div>
       )}
 
@@ -89,13 +119,21 @@ export default function DeviceMatrixLinkModal({
         )}
         {filtered.map((u: any) => {
           const isSelected = selectedUserId === u.userId;
+          const isCurrentDevice = u.userId === device.userId;
+          const isTakenByOther =
+            !isCurrentDevice &&
+            takenMatrixUserIds?.has(u.userId);
+
           return (
             <button
               key={u.userId}
               type="button"
-              onClick={() => setSelectedUserId(u.userId)}
+              disabled={isTakenByOther}
+              onClick={() => !isTakenByOther && setSelectedUserId(u.userId)}
               className={`w-full text-left flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors ${
-                isSelected
+                isTakenByOther
+                  ? "opacity-40 cursor-not-allowed border border-transparent"
+                  : isSelected
                   ? "bg-indigo-50 border border-indigo-300"
                   : "hover:bg-slate-50 border border-transparent"
               }`}
@@ -110,13 +148,18 @@ export default function DeviceMatrixLinkModal({
                 <div className="text-xs text-slate-500 truncate">
                   {u.username} · {u.email}
                 </div>
+                {isTakenByOther && (
+                  <div className="text-[10px] text-rose-500 font-medium">
+                    Already linked to another device
+                  </div>
+                )}
               </div>
               {u.roles?.length > 0 && (
                 <span className="shrink-0 text-[10px] font-medium bg-slate-100 text-slate-600 rounded px-1.5 py-0.5">
                   {u.roles[0]}
                 </span>
               )}
-              {isSelected && (
+              {isSelected && !isTakenByOther && (
                 <CheckCircle2 className="h-4 w-4 shrink-0 text-indigo-600" />
               )}
             </button>
@@ -136,10 +179,10 @@ export default function DeviceMatrixLinkModal({
           pending={linkM.isPending}
           pendingText="Linking…"
           onClick={() => linkM.mutate()}
-          disabled={!selectedUserId}
+          disabled={!selectedUserId || selectedUserId === device.userId}
         >
           <Link2 className="h-4 w-4" />
-          Link User
+          {device.userId ? "Re-link User" : "Link User"}
         </LoadingButton>
       </div>
     </Modal>
