@@ -400,6 +400,16 @@ export async function getDeviceApps(params: {
   return { items, meta };
 }
 
+export async function getMatrixUsers(): Promise<any[]> {
+  const { data } = await api.get('/matrix/users');
+  return Array.isArray(data?.data) ? data.data : [];
+}
+
+export async function linkDeviceToMatrixUser(deviceId: string, matrixUserId: string) {
+  const { data } = await api.post('/matrix/link-device', { deviceId, matrixUserId });
+  return data;
+}
+
 export async function getDeviceTitles(params: {
   deviceId: string;
   from?: string;

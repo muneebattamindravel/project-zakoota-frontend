@@ -8,9 +8,11 @@ import {
   Grid2x2,
   ListChecks,
   ScrollText,
+  Link2,
 } from "lucide-react";
 import { fmtHMS, fmtLocal, fmtAgo } from "../../utils/format";
 import DeviceAssignModal from "./DeviceAssignModal";
+import DeviceMatrixLinkModal from "./DeviceMatrixLinkModal";
 import DeviceCommandModal from "./DeviceCommandModal";
 import DeviceHistoryModal from "./DeviceHistoryModal";
 import DeviceLogsModal from "./DeviceLogsModal";
@@ -127,6 +129,7 @@ export default function DeviceCard({
   const [openLogs, setOpenLogs] = useState(false);
   const [openApps, setOpenApps] = useState(false);
   const [openTitles, setOpenTitles] = useState(false);
+  const [openMatrixLink, setOpenMatrixLink] = useState(false);
 
   const handleCopyDeviceId = async () => {
     const id = device?.deviceId;
@@ -244,6 +247,12 @@ export default function DeviceCard({
                 {device.deviceId}
               </button>
             </div>
+            {device.userId && (
+              <div className="flex items-center gap-1 text-[10px] font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5 w-fit">
+                <Link2 className="h-3 w-3" />
+                Matrix linked
+              </div>
+            )}
           </div>
         </div>
 
@@ -426,6 +435,13 @@ export default function DeviceCard({
         >
           <User className="h-4 w-4" />
         </button>
+        <button
+          onClick={() => setOpenMatrixLink(true)}
+          className={`p-2 rounded-lg hover:bg-indigo-100 ${device.userId ? "text-indigo-600" : "text-slate-400 hover:text-indigo-600"}`}
+          title="Link to Matrix user"
+        >
+          <Link2 className="h-4 w-4" />
+        </button>
 
         <div className="ml-auto flex gap-2">
           <button
@@ -484,6 +500,12 @@ export default function DeviceCard({
         open={openTitles}
         onClose={() => setOpenTitles(false)}
         device={device}
+      />
+      <DeviceMatrixLinkModal
+        open={openMatrixLink}
+        onClose={() => setOpenMatrixLink(false)}
+        device={device}
+        onToast={onToast}
       />
     </div>
   );
