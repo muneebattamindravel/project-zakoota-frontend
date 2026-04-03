@@ -65,6 +65,7 @@ export default function DeviceMatrixLinkModal({
   });
 
   const currentlyLinked = device.matrixUser ?? users.find((u: any) => u.userId === device.userId);
+  const isLinked = !!device.userId;
 
   return (
     <Modal
@@ -73,14 +74,14 @@ export default function DeviceMatrixLinkModal({
       title={`Matrix Link: ${device.deviceId}`}
       widthClass="w-[520px]"
     >
-      {currentlyLinked && (
+      {isLinked && (
         <div className="mb-3 flex items-center justify-between gap-2 rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-2">
           <div className="flex items-center gap-2 text-sm text-indigo-700">
             <CheckCircle2 className="h-4 w-4 shrink-0" />
             <span>
               Linked to{" "}
-              <span className="font-semibold">{currentlyLinked.name}</span>{" "}
-              <span className="text-indigo-400">({currentlyLinked.username})</span>
+              <span className="font-semibold">{currentlyLinked?.name ?? device.userId}</span>{" "}
+              {currentlyLinked?.username && <span className="text-indigo-400">({currentlyLinked.username})</span>}
             </span>
           </div>
           <LoadingButton
