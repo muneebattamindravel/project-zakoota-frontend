@@ -308,6 +308,17 @@ export default function DeviceCard({
             title={currentActivityLabel}
           />
         </div>
+        {device.lastMatrixIdleNotifiedAt && (
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-600">Matrix notified:</span>
+            <span
+              className="text-[11px] font-medium text-violet-600 bg-violet-50 border border-violet-200 rounded-full px-2 py-0.5"
+              title={new Date(device.lastMatrixIdleNotifiedAt).toLocaleString()}
+            >
+              {fmtAgo(device.lastMatrixIdleNotifiedAt)} ago
+            </span>
+          </div>
+        )}
       </div>
 
       {/* TODAY'S ACTIVITY (ring color: green when active >= idle, else red) */}
