@@ -330,7 +330,7 @@ export default function HealthPage() {
                   className="border rounded-xl px-3 py-2 text-xs sm:text-sm w-full bg-slate-50 focus:bg-white focus:border-slate-300"
                 />
                 <p className="mt-1 text-[10px] text-slate-400">
-                  Idle seconds in a chunk before notifying Matrix to stop the active timer. Default: 300 (5 min).
+                  Idle seconds in a chunk before notifying Matrix. Must be ≤ chunk time. Capped automatically if higher.
                 </p>
               </div>
 
