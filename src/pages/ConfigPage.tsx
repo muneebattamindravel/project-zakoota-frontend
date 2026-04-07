@@ -30,6 +30,7 @@ export default function HealthPage() {
   const [userName, setUserName] = useState('');
   const [userProfileImageURL, setUserProfileImageURL] = useState('');
   const [allowQuit, setAllowQuit] = useState(false);
+  const [matrixIdleThreshold, setMatrixIdleThreshold] = useState(300);
 
   useEffect(() => {
     if (configQ.data) {
@@ -42,6 +43,7 @@ export default function HealthPage() {
       setUserProfileImageURL(configQ.data.profileURL);
       setVersion(configQ.data.version);
       setAllowQuit(Boolean(configQ.data.allowQuit));
+      setMatrixIdleThreshold(configQ.data.matrixIdleThresholdSeconds ?? 300);
     }
   }, [configQ.data]);
 
@@ -60,6 +62,7 @@ export default function HealthPage() {
       clientHeartbeatDelay: Number(clientDelay),
       serviceHeartbeatDelay: Number(serviceDelay),
       allowQuit,
+      matrixIdleThresholdSeconds: Number(matrixIdleThreshold),
     });
   };
 
@@ -312,6 +315,22 @@ export default function HealthPage() {
                 />
                 <p className="mt-1 text-[10px] text-slate-400">
                   How often the background service reports status.
+                </p>
+              </div>
+
+              {/* Matrix idle threshold */}
+              <div>
+                <label className="block text-[11px] font-medium text-slate-500 mb-1">
+                  Matrix idle threshold (seconds)
+                </label>
+                <input
+                  type="number"
+                  value={matrixIdleThreshold}
+                  onChange={(e) => setMatrixIdleThreshold(Number(e.target.value))}
+                  className="border rounded-xl px-3 py-2 text-xs sm:text-sm w-full bg-slate-50 focus:bg-white focus:border-slate-300"
+                />
+                <p className="mt-1 text-[10px] text-slate-400">
+                  Idle seconds in a chunk before notifying Matrix to stop the active timer. Default: 300 (5 min).
                 </p>
               </div>
 

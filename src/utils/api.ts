@@ -201,6 +201,7 @@ export type ConfigPayload = {
   clientHeartbeatDelay?: number;
   serviceHeartbeatDelay?: number;
   allowQuit?: boolean;
+  matrixIdleThresholdSeconds?: number;
 };
 
 export async function getUserConfig(deviceId: string) {

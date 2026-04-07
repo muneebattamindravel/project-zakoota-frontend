@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { RefreshCw } from "lucide-react";
 import dayjs from "dayjs";
 import Modal from "../ui/Modal";
 import { Spinner } from "../ui";
@@ -36,6 +37,8 @@ function toISO(dtLocal: string) {
 type QuickRange = "today" | "last24" | "thisWeek" | "thisMonth";
 
 export default function DeviceLogsModal({ open, onClose, device }: Props) {
+  const qc = useQueryClient();
+
   // Defaults: "today" = from midnight local → now
   const nowRef = useMemo(() => new Date(), []);
   const defaultTo = useMemo(() => toInputLocal(nowRef), [nowRef]);
@@ -238,7 +241,7 @@ export default function DeviceLogsModal({ open, onClose, device }: Props) {
               </select>
             </div>
 
-            {/* Quick presets */}
+            {/* Quick presets + refresh */}
             <div className="ml-auto flex flex-wrap items-end gap-2">
               <span className="hidden sm:inline text-[11px] text-slate-500 mr-1">
                 Quick ranges
@@ -271,11 +274,16 @@ export default function DeviceLogsModal({ open, onClose, device }: Props) {
               >
                 This month
               </button>
-              {q.isFetching && (
-                <span className="flex items-center gap-1 text-[11px] text-slate-500">
-                  <Spinner /> Refreshing…
-                </span>
-              )}
+              <button
+                type="button"
+                onClick={() => qc.invalidateQueries({ queryKey: ["device-logs", device?.deviceId] })}
+                disabled={q.isFetching}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] sm:text-xs border rounded-full bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Refresh logs"
+              >
+                <RefreshCw className={`h-3 w-3 ${q.isFetching ? "animate-spin" : ""}`} />
+                Refresh
+              </button>
             </div>
           </div>
 
