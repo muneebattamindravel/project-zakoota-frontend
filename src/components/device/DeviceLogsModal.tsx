@@ -70,7 +70,6 @@ export default function DeviceLogsModal({ open, onClose, device }: Props) {
         skip,
         limit,
       }),
-    placeholderData: (prev) => prev,
     refetchOnWindowFocus: false,
   });
 
