@@ -49,6 +49,7 @@ export default function DeviceLogsModal({ open, onClose, device }: Props) {
   const [toDT, setToDT] = useState<string>(defaultTo);
   const [limit, setLimit] = useState<number>(50);
   const [skip, setSkip] = useState<number>(0);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Reset pagination when key inputs change
   useEffect(() => {
@@ -60,7 +61,7 @@ export default function DeviceLogsModal({ open, onClose, device }: Props) {
 
   const q = useQuery<LogsListResponse>({
     enabled: open && !!device?.deviceId,
-    queryKey: ["device-logs", device?.deviceId, fromISO, toISOv, skip, limit],
+    queryKey: ["device-logs", device?.deviceId, fromISO, toISOv, skip, limit, refreshKey],
     queryFn: () =>
       getDeviceLogs({
         deviceId: device.deviceId,
@@ -274,7 +275,7 @@ export default function DeviceLogsModal({ open, onClose, device }: Props) {
               </button>
               <button
                 type="button"
-                onClick={() => q.refetch()}
+                onClick={() => setRefreshKey((k) => k + 1)}
                 disabled={q.isFetching}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] sm:text-xs border rounded-full bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Refresh logs"
